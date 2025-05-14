@@ -1,0 +1,22 @@
+# Binaries and executables
+*.exe
+floodacebackEnd.exe
+
+# Logs
+logs/
+logs/*
+
+# Environment variables
+.env
+
+# SSL/TLS Certificates
+server.crt
+server.key
+
+# IDE specific files
+.idea/
+.vscode/
+
+# OS specific files
+.DS_Store
+Thumbs.db
