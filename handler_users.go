@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,11 +11,27 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"floodaceBackEnd.com/sqlcdb"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
+	"HMSBackend/sqlcdb"
 )
+func validateUser(queries *sqlcdb.Queries, validateUsername string) bool {
+
+	users, err := queries.GetUsers(context.Background())
+
+	if err != nil {
+		return false
+	}
+
+	for _, user := range users {
+		if user.Email == validateUsername {
+			return true
+		}
+	}
+	return false
+
+}
+
 
 func handleValidateUser(queries *sqlcdb.Queries) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -196,7 +213,6 @@ func handleGetAllUsers(queries *sqlcdb.Queries) echo.HandlerFunc {
 
 		case "admin":
 			// Fetch users from the same organization with lower or equal role level
-			// Replace GetUsersByClientAndRole with GetUsersByOrganizationAndRole
 			users, err := queries.GetUsersByOrganizationAndRole(c.Request().Context(), sqlcdb.GetUsersByOrganizationAndRoleParams{
 				OrganizationID: requestingUser.OrganizationID,
 				Role:           "admin",
