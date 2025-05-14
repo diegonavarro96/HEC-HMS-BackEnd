@@ -1,0 +1,16 @@
+version: "1"
+packages:
+  - name: "sqlcdb"
+    path: "./sqlcdb"
+    queries:
+      - "./sql/users_queries.sql"
+    schema: "./sql/schema.sql"
+    engine: "postgresql"
+    emit_json_tags: true
+    emit_prepared_queries: true
+    emit_interface: false
+    overrides:
+      - db_type: "decimal"
+        go_type: "float64"
+      - db_type: "numeric"
+        go_type: "float64"
