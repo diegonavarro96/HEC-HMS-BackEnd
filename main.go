@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -204,6 +207,9 @@ func main() {
 	e.GET("/api/get/all_users", handleGetAllUsers(queries))
 	e.POST("/api/modify/user", handleModifyUser(queries))
 
+	// HMS processing pipeline endpoint
+	e.POST("/api/run-hms-pipeline", handleRunHMSPipeline)
+
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
 		"tls", "\x1b[32mtrue\x1b[0m",
@@ -215,5 +221,43 @@ func main() {
 			"error", "\x1b[31m"+err.Error()+"\x1b[0m",
 		)
 	}
+}
+
+// handleRunHMSPipeline handles the request to run the HMS processing pipeline
+func handleRunHMSPipeline(c echo.Context) error {
+	// Define a struct for the request body
+	type PipelineRequest struct {
+		Date    string `json:"date"`     // Optional date in YYYYMMDD format
+		RunHour string `json:"run_hour"` // Optional run hour in HH format
+	}
+
+	// Parse request body
+	var req PipelineRequest
+	if err := c.Bind(&req); err != nil {
+		log.Printf("Error parsing request body: %v", err)
+		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
+	}
+
+	// Log the received parameters
+	log.Printf("Received HMS pipeline request: date=%s, run_hour=%s", req.Date, req.RunHour)
+
+	// Run the pipeline in a goroutine to avoid blocking the HTTP response
+	go func() {
+		// Create a new context with a timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+		defer cancel()
+
+		// Run the pipeline
+		err := RunProcessingPipeline(ctx, req.Date, req.RunHour)
+		if err != nil {
+			log.Printf("HMS pipeline failed: %v", err)
+		}
+	}()
+
+	// Return a success response immediately
+	return respondWithJSON(c, http.StatusAccepted, map[string]string{
+		"message": "HMS processing pipeline started",
+		"status":  "accepted",
+	})
 }
 
