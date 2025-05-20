@@ -22,3 +22,7 @@ server.key
 Thumbs.db
 
 CSV/
+
+data/
+
+gribFiles/
