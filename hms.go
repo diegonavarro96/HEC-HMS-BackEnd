@@ -83,7 +83,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// 1. Download GRIB Files
 	log.Println("STEP 1: Downloading GRIB files...")
 	gribPayload := map[string]string{"date": dateToUse}
-	err = makePostRequest(ctx, client, downloadGribURL, gribPayload)
+	err = MakePostRequest(ctx, client, downloadGribURL, gribPayload)
 	if err != nil {
 		return fmt.Errorf("failed at step 1 (download_grib): %w", err)
 	}
@@ -95,7 +95,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		"target_date": dateToUse,
 		"run_hour":    runHourToUse,
 	}
-	err = makePostRequest(ctx, client, downloadHrrrGribURL, hrrrDownloadPayload)
+	err = MakePostRequest(ctx, client, downloadHrrrGribURL, hrrrDownloadPayload)
 	if err != nil {
 		return fmt.Errorf("failed at step 2 (download_hrrr_grib): %w", err)
 	}
@@ -107,7 +107,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// 3. Merge GRIB Files
 	log.Println("STEP 3: Merging GRIB files...")
 	// Sending an empty payload as the date logic is handled by the Flask endpoint.
-	err = makePostRequest(ctx, client, mergeGribURL, emptyPayload)
+	err = MakePostRequest(ctx, client, mergeGribURL, emptyPayload)
 	if err != nil {
 		return fmt.Errorf("failed at step 3 (merge_grib): %w", err)
 	}
@@ -116,7 +116,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// 4. Merge HRRR GRIB Files
 	log.Println("STEP 4: Merging HRRR GRIB files...")
 	// Sending an empty payload as the date logic is handled by the Flask endpoint.
-	err = makePostRequest(ctx, client, mergeHrrrGribURL, emptyPayload)
+	err = MakePostRequest(ctx, client, mergeHrrrGribURL, emptyPayload)
 	if err != nil {
 		return fmt.Errorf("failed at step 4 (merge_hrrr_grib): %w", err)
 	}
@@ -124,7 +124,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 
 	// 5. Combine DSS Records
 	log.Println("STEP 5: Combining DSS records...")
-	err = makePostRequest(ctx, client, combineDssURL, emptyPayload) // Reuse emptyPayload
+	err = MakePostRequest(ctx, client, combineDssURL, emptyPayload) // Reuse emptyPayload
 	if err != nil {
 		return fmt.Errorf("failed at step 5 (combine_dss): %w", err)
 	}
@@ -132,7 +132,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 
 	// 6. Update Control File
 	log.Println("STEP 6: Updating control file...")
-	err = makePostRequest(ctx, client, updateControlURL, emptyPayload) // Reuse emptyPayload
+	err = MakePostRequest(ctx, client, updateControlURL, emptyPayload) // Reuse emptyPayload
 	if err != nil {
 		return fmt.Errorf("failed at step 6 (update_control): %w", err)
 	}
@@ -141,7 +141,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// 7. Run HMS
 	log.Println("STEP 7: Running HMS...")
 	// Sending an empty payload as the run configuration is handled by the Flask endpoint.
-	err = makePostRequest(ctx, client, runHmsURL, emptyPayload) // Reuse emptyPayload
+	err = MakePostRequest(ctx, client, runHmsURL, emptyPayload) // Reuse emptyPayload
 	if err != nil {
 		return fmt.Errorf("failed at step 7 (run_hms): %w", err)
 	}
@@ -151,8 +151,8 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	return nil
 }
 
-// makePostRequest is a helper function to make a POST request with a JSON payload
-func makePostRequest(ctx context.Context, client *http.Client, url string, payload interface{}) error {
+// MakePostRequest is a helper function to make a POST request with a JSON payload
+func MakePostRequest(ctx context.Context, client *http.Client, url string, payload interface{}) error {
 	// Convert payload to JSON
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {

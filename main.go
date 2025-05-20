@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"HMSBackend/sqlcdb"
+
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -143,11 +145,12 @@ func main() {
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOriginFunc: func(origin string) (bool, error) {
 			allowedOrigins := map[string]bool{
-				"https://localhost:8443":         true,
-				"https://floodaceserver.ai:8443": true,
-				"https://floodaceserver.ai:8444": true,
-				"https://localhost:3000":         true,
-				"https://floodaceserver.ai:8442": true,
+				"https://localhost:8442":                true,
+				"https://floodaceserver.ai:8443":        true,
+				"https://floodaceserver.ai:8444":        true,
+				"https://localhost:3000":                true,
+				"https://floodaceserver.ai:8442":        true,
+				"https://diegon.tail779ff5.ts.net:8442": true,
 			}
 
 			if allowedOrigins[origin] {
@@ -182,6 +185,10 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	staticCogDir := "data/cogs_output" // Define it once
+	log.Printf("Serving static COG files from local directory: %s under URL prefix /cogs", staticCogDir)
+	e.Static("/cogs", staticCogDir)
+
 	// Database connection
 	dbConn, err := dbConnection()
 	if err != nil {
@@ -190,7 +197,6 @@ func main() {
 		)
 	}
 	defer dbConn.Close()
-
 
 	queries := sqlcdb.New(dbConn)
 	sugar.Info("Database connection established successfully")
@@ -209,6 +215,11 @@ func main() {
 
 	// HMS processing pipeline endpoint
 	e.POST("/api/run-hms-pipeline", handleRunHMSPipeline)
+
+	// Junction flow data endpoint
+	e.POST("/api/get-junction-flow", handleGetJunctionFlow)
+
+	e.GET("/api/precip/latest", handelGetLatestPrecip)
 
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
@@ -261,3 +272,137 @@ func handleRunHMSPipeline(c echo.Context) error {
 	})
 }
 
+// handleGetJunctionFlow handles the request to get flow data for a junction
+func handleGetJunctionFlow(c echo.Context) error {
+	// Define a struct for the request body
+	type JunctionRequest struct {
+		BJunctionPart string `json:"b_part_junction"`
+	}
+
+	// Parse request body
+	var req JunctionRequest
+	if err := c.Bind(&req); err != nil {
+		log.Printf("Error parsing junction flow request body: %v", err)
+		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
+	}
+
+	// Log the received parameter
+	log.Printf("Received junction flow request for: %s", req.BJunctionPart)
+
+	// Get the URL from environment variable
+	junctionFlowURL := os.Getenv("PYTHON_GET_DSS_JUNCTION_FLOW_URL")
+	if junctionFlowURL == "" {
+		log.Printf("Missing required environment variable: PYHTON_GET_DSS_JUNCTION_FLOW_URL")
+		return respondWithError(c, http.StatusInternalServerError, "Server configuration error")
+	}
+
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: 5 * time.Minute,
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Forward the request to the Python endpoint
+	payload := map[string]string{"b_part_junction": req.BJunctionPart}
+	err := MakePostRequest(ctx, client, junctionFlowURL, payload)
+	if err != nil {
+		log.Printf("Error getting junction flow data: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, "Failed to process junction flow data")
+	}
+
+	// Read the CSV file
+	csvPath := "CSV/output.csv"
+	csvData, err := os.ReadFile(csvPath)
+	if err != nil {
+		log.Printf("Error reading CSV file: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, "Failed to read flow data results")
+	}
+
+	// Parse CSV data
+	lines := strings.Split(string(csvData), "\n")
+	var dataPoints []map[string]interface{}
+
+	// Skip header row if it exists and process data rows
+	startRow := 0
+	if len(lines) > 0 && (strings.Contains(lines[0], "time") || strings.Contains(lines[0], "Time") ||
+		strings.Contains(lines[0], "DATE") || strings.Contains(lines[0], "Date")) {
+		startRow = 1
+	}
+
+	for i := startRow; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, ",")
+		if len(parts) >= 2 {
+			timeStr := strings.TrimSpace(parts[0])
+			valueStr := strings.TrimSpace(parts[1])
+
+			// Use the time string directly from the CSV
+			formattedTime := timeStr
+
+			value, err := strconv.ParseFloat(valueStr, 64)
+			if err != nil {
+				log.Printf("Warning: Could not parse value '%s' as float", valueStr)
+				continue
+			}
+
+			dataPoints = append(dataPoints, map[string]interface{}{
+				"time":  formattedTime,
+				"value": value,
+			})
+		}
+	}
+
+	// Create response with America/Monterrey timezone as specified
+	response := map[string]interface{}{
+		"series": []map[string]interface{}{
+			{
+				"name":     req.BJunctionPart,
+				"unit":     "cfs",
+				"timezone": "UTC", // As specified in requirements
+				"data":     dataPoints,
+			},
+		},
+	}
+
+	return respondWithJSON(c, http.StatusOK, response)
+}
+
+// parseTimeString attempts to parse a time string in various formats
+func parseTimeString(timeStr string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02T15:04:05", // ISO format without timezone
+		"2006-01-02 15:04:05", // Common date time format
+		"02 Jan 2006T15:04",   // DD Mon YYYYTHH:MM format
+		"01/02/2006 15:04:05", // MM/DD/YYYY format
+		"02/01/2006 15:04:05", // DD/MM/YYYY format
+		"2006/01/02 15:04:05", // YYYY/MM/DD format
+		"01-02-2006 15:04:05", // MM-DD-YYYY format
+		"02-01-2006 15:04:05", // DD-MM-YYYY format
+		"2006-01-02",          // YYYY-MM-DD date only
+		"01/02/2006",          // MM/DD/YYYY date only
+		"02/01/2006",          // DD/MM/YYYY date only
+		"2006/01/02",          // YYYY/MM/DD date only
+		"20060102150405",      // YYYYMMDDhhmmss
+		"20060102",            // YYYYMMDD date only
+		"01022006",            // MMDDYYYY date only
+		"02012006",            // DDMMYYYY date only
+		"15:04:05",            // Time only
+		"15:04",               // Hours and minutes only
+	}
+
+	for _, format := range formats {
+		t, err := time.Parse(format, timeStr)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("no matching time format found for: %s", timeStr)
+}

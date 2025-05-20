@@ -20,3 +20,5 @@ server.key
 # OS specific files
 .DS_Store
 Thumbs.db
+
+CSV/
