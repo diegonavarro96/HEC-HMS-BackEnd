@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,6 +20,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
 )
+
+// mrmsDataSourceURL will be set by a command-line flag.
+// It's used by FetchLatestQPE in get_precip_accum.go.
+var mrmsDataSourceURL string
 
 // initLogger configures and creates a new zap logger
 func initLogger() (*zap.Logger, error) {
@@ -109,6 +114,13 @@ func CustomRequestLogger(sugar *zap.SugaredLogger) echo.MiddlewareFunc {
 }
 
 func main() {
+	// Define and parse command-line flags first
+	// The default URL for the MRMS QPE data source.
+	// This will populate the package-level mrmsDataSourceURL variable.
+	flag.StringVar(&mrmsDataSourceURL, "url", "https://mtarchive.geol.iastate.edu/2025/05/05/mrms/ncep/MultiSensor_QPE_24H_Pass2/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
+	//flag.StringVar(&mrmsDataSourceURL, "url", "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_24H/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
+	flag.Parse()
+
 	// Initialize logger
 	logger, err := initLogger()
 	if err != nil {
@@ -117,6 +129,11 @@ func main() {
 	defer logger.Sync()
 
 	sugar := logger.Sugar()
+
+	// Log the MRMS data source URL being used
+	sugar.Infow("MRMS Data Source Configuration",
+		"url", "\x1b[36m"+mrmsDataSourceURL+"\x1b[0m",
+	)
 
 	// Load environment variables
 	err = godotenv.Load()
@@ -188,6 +205,11 @@ func main() {
 	staticCogDir := "data/cogs_output" // Define it once
 	log.Printf("Serving static COG files from local directory: %s under URL prefix /cogs", staticCogDir)
 	e.Static("/cogs", staticCogDir)
+	// Serve the specific test TIF file at /cogs_test
+	// The file path is relative to the application's root directory.
+	testTifFilePath := "cogs_output/reprojectv5.tif"
+	log.Printf("Serving static file %s at URL prefix /cogs_test", testTifFilePath)
+	e.File("/cogs_test", testTifFilePath)
 
 	// Database connection
 	dbConn, err := dbConnection()

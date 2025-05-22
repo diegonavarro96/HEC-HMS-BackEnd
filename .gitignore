@@ -26,3 +26,7 @@ CSV/
 data/
 
 gribFiles/
+
+cogs_output/
+
+hms_models/
