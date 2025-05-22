@@ -72,9 +72,9 @@ func handleCallback(c echo.Context) error {
 	cookie.Name = "arcgis_token"
 	cookie.Value = tokenResponse.AccessToken
 	cookie.HttpOnly = true
-	cookie.Secure = os.Getenv("NODE_ENV") != "development"
+	cookie.Secure = true
 	cookie.Expires = time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
-	cookie.SameSite = http.SameSiteLaxMode
+	cookie.SameSite = http.SameSiteNoneMode
 	cookie.Path = "/"
 	c.SetCookie(cookie)
 

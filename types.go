@@ -178,3 +178,11 @@ type GetUsersByClientAndRoleParams struct {
 	Client string
 	Role   string
 }
+
+type PrecipMeta struct {
+	Timestamp string     `json:"timestamp"`
+	COGPath   string     `json:"cog_path"`
+	Bounds    [4]float64 `json:"bounds"`
+	Width     int        `json:"width"`
+	Height    int        `json:"height"`
+}

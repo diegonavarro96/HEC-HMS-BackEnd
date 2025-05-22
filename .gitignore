@@ -20,3 +20,13 @@ server.key
 # OS specific files
 .DS_Store
 Thumbs.db
+
+CSV/
+
+data/
+
+gribFiles/
+
+cogs_output/
+
+hms_models/
