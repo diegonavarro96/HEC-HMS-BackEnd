@@ -202,7 +202,7 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	staticCogDir := "data/cogs_output" // Define it once
+	staticCogDir := "../data/cogs_output" // Define it once
 	log.Printf("Serving static COG files from local directory: %s under URL prefix /cogs", staticCogDir)
 	e.Static("/cogs", staticCogDir)
 	// Serve the specific test TIF file at /cogs_test
@@ -336,7 +336,7 @@ func handleGetJunctionFlow(c echo.Context) error {
 	}
 
 	// Read the CSV file
-	csvPath := "CSV/output.csv"
+	csvPath := "../CSV/output.csv"
 	csvData, err := os.ReadFile(csvPath)
 	if err != nil {
 		log.Printf("Error reading CSV file: %v", err)
