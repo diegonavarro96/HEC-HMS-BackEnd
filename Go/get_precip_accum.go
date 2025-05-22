@@ -178,10 +178,10 @@ func runGRIBtoCOG(ctx context.Context) (*PrecipMeta, error) {
 	log.Printf("Using GRIB file for COG conversion: %s", latestGribFilePath)
 
 	// outDir: This will be relative to Go's working directory
-	const outDir = "data/cogs_output"
+	const outDir = "../data/cogs_output"
 
 	// Python script path: Relative to Go's working directory.
-	scriptRelativePath := filepath.Join("python_scripts", "get_rainfall_accumulation", "grib_to_cog.py")
+	scriptRelativePath := filepath.Join("../python_scripts", "get_rainfall_accumulation", "grib_to_cog.py")
 
 	// --- Ensure output directory exists ---
 	if err := os.MkdirAll(outDir, 0755); err != nil {
