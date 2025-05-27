@@ -243,6 +243,9 @@ func main() {
 
 	e.GET("/api/precip/latest", handelGetLatestPrecip)
 
+	//Historical API Calls
+	//e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
+
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
 		"tls", "\x1b[32mtrue\x1b[0m",

@@ -30,3 +30,7 @@ gribFiles/
 cogs_output/
 
 hms_models/
+
+Go/.env
+
+Go/config.yaml
