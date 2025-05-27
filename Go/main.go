@@ -251,6 +251,9 @@ func main() {
 		"tls", "\x1b[32mtrue\x1b[0m",
 	)
 
+	// Start the scheduler
+	StartScheduler() // This will run the archive and pipeline trigger task at HH:15
+
 	// Start server with TLS
 	if err := e.StartTLS(":"+port, "./server.crt", "./server.key"); err != nil {
 		sugar.Fatalw("💥 Server failed to start",
