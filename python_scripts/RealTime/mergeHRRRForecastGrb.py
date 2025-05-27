@@ -265,21 +265,21 @@ if __name__ == "__main__":
 
     try:
         result = merge_hrrr_forecast_grb_once(target_date_strs=target_date_args)
-        print("✅ HRRR GRIB merge process completed successfully.")
+        print("HRRR GRIB merge process completed successfully.")
         if result.get("stderr"):
              stderr_output = result["stderr"].strip()
              if stderr_output:
                  print("--- Stderr Output (HRRR Merge) ---")
                  print(stderr_output)
     except FileNotFoundError as fnf_error:
-        print(f"❌ ERROR: Input GRIB folder not found. Details: {fnf_error}")
+        print(f"ERROR: Input GRIB folder not found. Details: {fnf_error}")
         logger.error(f"HRRR Merge failed: {fnf_error}", exc_info=True)
         sys.exit(1)
     except (KeyError, ValueError) as config_error:
-        print(f"❌ ERROR: Configuration problem for HRRR merge. Details: {config_error}")
+        print(f"ERROR: Configuration problem for HRRR merge. Details: {config_error}")
         logger.error(f"HRRR Merge failed due to config error: {config_error}", exc_info=True)
         sys.exit(1)
     except Exception as e:
-        print(f"❌ ERROR during HRRR GRIB merge: {e}")
+        print(f"ERROR during HRRR GRIB merge: {e}")
         logger.error("HRRR Merge failed:", exc_info=True)
         sys.exit(1)

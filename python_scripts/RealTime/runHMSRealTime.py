@@ -298,17 +298,59 @@ def run_computations(
     return summary
 
 if __name__ == '__main__':
-    # Default behavior: Prompt user for runs
-    try:
-        summary = run_computations() # run_name_to_execute is None
-        print(f"Completed {summary['succeeded']}/{summary['attempted']} runs.")
-        if summary['failed'] > 0:
-            print("--- Failed Runs ---")
-            for failure in summary['failures']:
-                print(f"Run: {failure['name']}")
-                print("Output:")
-                print(failure['message'].strip())
-                print("-" * 20)
-    except Exception as e:
-        print(f"ERROR: {e}")
-        sys.exit(1)
+    # Check if a run selection number was provided as command line argument
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        # Load config and get available runs to determine which one corresponds to the number
+        try:
+            cfg = load_config()
+            projects = cfg.get('hms_projects', {})
+            if not projects:
+                raise HmsRunnerError("No projects in config.hms_projects")
+            
+            # Use first project by default
+            key = next(iter(projects))
+            proj_cfg = projects.get(key)
+            
+            model_base = get_full_data_path(cfg, 'hms_model_base_subdir')
+            proj_dir = os.path.join(model_base, proj_cfg['directory_name'])
+            
+            hms_file, run_file = discover_project_files(proj_dir)
+            runs = parse_run_file(os.path.join(proj_dir, run_file))
+            
+            # Convert the provided number to 0-based index
+            run_index = int(sys.argv[1]) - 1
+            
+            if 0 <= run_index < len(runs):
+                # Run the specific option
+                selected_run = runs[run_index]
+                print(f"Automatically selecting option {sys.argv[1]}: {selected_run}")
+                summary = run_computations(run_name_to_execute=selected_run)
+                print(f"Completed {summary['succeeded']}/{summary['attempted']} runs.")
+                if summary['failed'] > 0:
+                    print("--- Failed Runs ---")
+                    for failure in summary['failures']:
+                        print(f"Run: {failure['name']}")
+                        print("Output:")
+                        print(failure['message'].strip())
+                        print("-" * 20)
+            else:
+                print(f"ERROR: Invalid run number {sys.argv[1]}. Available runs: 1-{len(runs)}")
+                sys.exit(1)
+        except Exception as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
+    else:
+        # Default behavior: Prompt user for runs
+        try:
+            summary = run_computations() # run_name_to_execute is None
+            print(f"Completed {summary['succeeded']}/{summary['attempted']} runs.")
+            if summary['failed'] > 0:
+                print("--- Failed Runs ---")
+                for failure in summary['failures']:
+                    print(f"Run: {failure['name']}")
+                    print("Output:")
+                    print(failure['message'].strip())
+                    print("-" * 20)
+        except Exception as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)

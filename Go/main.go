@@ -117,8 +117,8 @@ func main() {
 	// Define and parse command-line flags first
 	// The default URL for the MRMS QPE data source.
 	// This will populate the package-level mrmsDataSourceURL variable.
-	flag.StringVar(&mrmsDataSourceURL, "url", "https://mtarchive.geol.iastate.edu/2025/05/05/mrms/ncep/MultiSensor_QPE_24H_Pass2/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
-	//flag.StringVar(&mrmsDataSourceURL, "url", "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_24H/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
+	//flag.StringVar(&mrmsDataSourceURL, "url", "https://mtarchive.geol.iastate.edu/2025/05/05/mrms/ncep/MultiSensor_QPE_24H_Pass2/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
+	flag.StringVar(&mrmsDataSourceURL, "url", "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_24H/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
 	flag.Parse()
 
 	// Initialize logger
@@ -317,35 +317,24 @@ func handleGetJunctionFlow(c echo.Context) error {
 	// Log the received parameter
 	log.Printf("Received junction flow request for: %s", req.BJunctionPart)
 
-	// Get the URL from environment variable
-	junctionFlowURL := os.Getenv("PYTHON_GET_DSS_JUNCTION_FLOW_URL")
-	if junctionFlowURL == "" {
-		log.Printf("Missing required environment variable: PYHTON_GET_DSS_JUNCTION_FLOW_URL")
-		return respondWithError(c, http.StatusInternalServerError, "Server configuration error")
-	}
-
-	// Create HTTP client
-	client := &http.Client{
-		Timeout: 5 * time.Minute,
-	}
-
-	// Create context with timeout
+	// Create context with timeout for the script execution
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Forward the request to the Python endpoint
-	payload := map[string]string{"b_part_junction": req.BJunctionPart}
-	err := MakePostRequest(ctx, client, junctionFlowURL, payload)
+	// Execute the Python script directly
+	scriptPath := "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getDataFromDSSJython.py"
+	log.Printf("python script path: %s", scriptPath)
+	err := executePythonScript(ctx, scriptPath, req.BJunctionPart)
 	if err != nil {
-		log.Printf("Error getting junction flow data: %v", err)
+		log.Printf("Error executing Python script for junction flow data: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "Failed to process junction flow data")
 	}
 
-	// Read the CSV file
+	// Read the CSV file (assuming the Python script creates/updates this file)
 	csvPath := "../CSV/output.csv"
 	csvData, err := os.ReadFile(csvPath)
 	if err != nil {
-		log.Printf("Error reading CSV file: %v", err)
+		log.Printf("Error reading CSV file after script execution: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "Failed to read flow data results")
 	}
 

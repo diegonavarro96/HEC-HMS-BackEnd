@@ -423,13 +423,13 @@ if __name__ == "__main__":
         combine_successful = run_combine_dss_pass1_pass2()
 
         if combine_successful:
-            logger.info("\n✅ Direct execution: Combine completed successfully.")
+            logger.info("\nDirect execution: Combine completed successfully.")
             sys.exit(0)
         else:
-            logger.error("\n❌ Direct execution: Combine failed.")
+            logger.error("\nDirect execution: Combine failed.")
             sys.exit(1)
 
     except Exception as e:
         # Catch any exceptions raised during setup or run_combine_dss
-        logger.critical(f"\n❌ FATAL ERROR during direct execution: {e}", exc_info=True)
+        logger.critical(f"\nFATAL ERROR during direct execution: {e}", exc_info=True)
         sys.exit(1)

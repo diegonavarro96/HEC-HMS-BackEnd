@@ -175,11 +175,11 @@ if __name__ == "__main__":
 
     try:
         download_hrrr_forecast_gribs(current_target_date, current_run_hour, args.config)
-        print(f"✅ HRRR GRIB file download process completed for {current_target_date} t{current_run_hour}z.")
+        print(f"HRRR GRIB file download process completed for {current_target_date} t{current_run_hour}z.")
     except (ValueError, FileNotFoundError, KeyError) as e:
-        print(f"❌ ERROR: {e}")
+        print(f"ERROR: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ An unexpected error occurred: {e}")
+        print(f"An unexpected error occurred: {e}")
         logger.error("Unexpected error in main execution:", exc_info=True)
         sys.exit(1)

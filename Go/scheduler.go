@@ -44,36 +44,54 @@ func archiveFileAndTriggerPipeline() {
 		log.Printf("Scheduler: Error opening source file %s: %v\n", sourceFilePath, err)
 		return // Don't proceed if source file can't be opened
 	}
-	defer srcFile.Close()
 
 	dstFile, err := os.Create(archiveFilePath)
 	if err != nil {
+		srcFile.Close()
 		log.Printf("Scheduler: Error creating archive file %s: %v\n", archiveFilePath, err)
 		return
 	}
-	defer dstFile.Close()
 
 	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {
 		log.Printf("Scheduler: Error copying file to archive %s: %v\n", archiveFilePath, err)
 		// Attempt to clean up partially created archive file
+		srcFile.Close()
 		dstFile.Close()
 		os.Remove(archiveFilePath)
 		return
 	}
+	
+	// Close both files before attempting deletion
+	srcFile.Close()
+	dstFile.Close()
+	
 	log.Printf("Scheduler: File successfully archived to %s\n", archiveFilePath)
 
-	// 2. Delete the original file
-	// Important: Close the source file before attempting to delete it on Windows.
-	// The defer srcFile.Close() handles this, but good to be mindful.
-	// err = os.Remove(sourceFilePath)
-	// if err != nil {
-	// 	log.Printf("Scheduler: Error deleting original file %s: %v\n", sourceFilePath, err)
-	// 	// Log error but proceed to call API, as archiving was successful.
-	// 	// Depending on requirements, this could be a critical failure.
-	// } else {
-	// 	log.Printf("Scheduler: Original file %s deleted successfully\n", sourceFilePath)
-	// }
+	// 2. Delete the original file with retry mechanism for Windows
+	var deleteErr error
+	for attempts := 0; attempts < 5; attempts++ {
+		deleteErr = os.Remove(sourceFilePath)
+		if deleteErr == nil {
+			log.Printf("Scheduler: Original file %s deleted successfully\n", sourceFilePath)
+			break
+		}
+		
+		// If it's a "file in use" error, wait a bit and retry
+		if os.IsPermission(deleteErr) || os.IsNotExist(deleteErr) {
+			// File doesn't exist or permanent permission issue, no point retrying
+			break
+		}
+		
+		log.Printf("Scheduler: Attempt %d to delete file failed: %v. Retrying...\n", attempts+1, deleteErr)
+		time.Sleep(100 * time.Millisecond) // Wait 100ms before retry
+	}
+	
+	if deleteErr != nil {
+		log.Printf("Scheduler: Error deleting original file %s after retries: %v\n", sourceFilePath, deleteErr)
+		// Log error but proceed to call API, as archiving was successful.
+		// Depending on requirements, this could be a critical failure.
+	}
 
 	// 3. Trigger the HMS pipeline API
 	serverPort := os.Getenv("SERVER_PORT")
@@ -81,7 +99,7 @@ func archiveFileAndTriggerPipeline() {
 		log.Println("Scheduler: Error: SERVER_PORT environment variable not set. Cannot call API.")
 		return
 	}
-	apiURL := fmt.Sprintf("http://localhost:%s%s", serverPort, hmsPipelineEndpoint)
+	apiURL := fmt.Sprintf("https://localhost:%s%s", serverPort, hmsPipelineEndpoint)
 
 	log.Printf("Scheduler: Calling HMS pipeline API: %s\n", apiURL)
 	// We can send an empty JSON body or specific parameters if the API expects them.

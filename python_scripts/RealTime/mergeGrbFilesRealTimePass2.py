@@ -127,6 +127,7 @@ from mil.army.usace.hec.vortex.io import BatchImporter
 from mil.army.usace.hec.vortex.geo import WktFactory
 import os, sys
 import traceback
+from java.util import ArrayList # Modified import
 
 # --- Input Parameters (Set by Python wrapper) ---
 input_folders = {input_folder_list!r} # Use the passed list of folders
@@ -177,7 +178,14 @@ try:
 
     # Build the importer
     imp_builder = BatchImporter.builder()
-    imp_builder.inFiles(files) # Pass the collected list here
+
+    # Convert Python list to a new Java ArrayList (copy)
+    # files is the Python list of file paths collected above
+    java_files_copy = ArrayList()
+    for f_path in files:
+        java_files_copy.add(f_path)
+
+    imp_builder.inFiles(java_files_copy) # Pass the copied Java ArrayList
     imp_builder.variables(vars)
     imp_builder.geoOptions({{
         "pathToShp": shp,
@@ -204,6 +212,8 @@ try:
 
 except Exception as e:
     print("--- Jython Script Error ---")
+    print(traceback.format_exc()) # Print full traceback for Jython errors
+    sys.exit(1) # Ensure script exits with error code on exception
 
 """
     # --- END MODIFIED jython_tpl ---
@@ -225,6 +235,7 @@ except Exception as e:
         f"-J-Xms{jython_cfg.get('initial_heap','256m')}",
         f"-J-Xmx{jython_cfg.get('max_heap','8192m')}",
         f"-J-Djava.library.path={native_paths}",
+        "-J-Djava.util.concurrent.ForkJoinPool.common.parallelism=1",  # Limit parallelism to avoid concurrent issues
         "-c",
         jython_code,
     ]
@@ -268,6 +279,9 @@ def run_vortex_import(cmd: List[str], env: Dict[str, str]) -> subprocess.Complet
         return proc
     except subprocess.CalledProcessError as e:
         logger.error(f"ERROR: Jython process failed with exit code {e.returncode}.")
+        # Log stdout/stderr from the failed process for better diagnostics
+        if e.stdout: logger.error(f"Failed process STDOUT:\n{e.stdout}")
+        if e.stderr: logger.error(f"Failed process STDERR:\n{e.stderr}")
         raise e
     except FileNotFoundError as e:
          logger.error(f"ERROR: Could not find Jython executable or required file: {e}")
@@ -402,10 +416,10 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     try:
         result = merge_grb_once(target_date_strs=target_date_args)
-        print("✅ Merge process completed successfully.")
+        print("Merge process completed successfully.")
         if result.get("stderr"):
              print("--- Stderr Output ---")
              print(result["stderr"])
     except Exception as e:
-        print(f"❌ ERROR during merge: {e}")
+        print(f"ERROR during merge: {e}")
         sys.exit(1)

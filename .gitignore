@@ -38,3 +38,5 @@ Go/config.yaml
 python_scripts/RealTime/__pycache__
 
 python_scripts/RealTime/.jython_cache
+
+Go/.jython_cache

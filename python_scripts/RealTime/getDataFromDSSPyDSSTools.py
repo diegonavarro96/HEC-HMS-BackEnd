@@ -15,14 +15,14 @@ def extract_by_junction(
     end: str = None
 ) -> Dict[str, pd.DataFrame]:
     if not os.path.exists(dss_file):
-        print(f"❌ Error: DSS file not found at '{dss_file}'")
+        print(f"Error: DSS file not found at '{dss_file}'")
         return {}
 
     print(f"Attempting to open DSS file: {dss_file}")
     try:
         dss = HecDss.Open(dss_file)
     except Exception as e:
-        print(f"❌ Error opening DSS file: {e}")
+        print(f"Error opening DSS file: {e}")
         return {}
 
     print("DSS file opened.")
@@ -43,11 +43,11 @@ def extract_by_junction(
             selected.append(path)
 
     if not selected:
-        print(f"⚠️ No matching paths found for Part B='{junction}' and Part C='{item}'")
+        print(f"Warning: No matching paths found for Part B='{junction}' and Part C='{item}'")
         dss.close()
         return {}
 
-    print(f"✅ Found {len(selected)} matching paths.")
+    print(f"Found {len(selected)} matching paths.")
 
     data: Dict[str, pd.DataFrame] = {}
     utc_timezone = pytz.utc
@@ -118,4 +118,4 @@ if __name__ == "__main__":
             print(" • Sample:")
             print(df.head().to_string(index=False))
     else:
-        print("❌ No data extracted.")
+        print("No data extracted.")

@@ -207,6 +207,24 @@ def download_grib_files(date_str: str | None = None, config_path: str | None = N
     out_root = get_full_data_path(cfg, "grb_downloads_subdir")
     local_folder = datetime.now().astimezone().strftime("%Y%m%d")
     dest_dir = os.path.join(out_root, local_folder)
+    
+    # Clear the destination directory if it exists
+    if os.path.exists(dest_dir):
+        logger.info("Clearing existing files in %s", dest_dir)
+        try:
+            # Remove all files in the directory
+            for filename in os.listdir(dest_dir):
+                file_path = os.path.join(dest_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    logger.debug("Removed: %s", file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                    logger.debug("Removed directory: %s", file_path)
+            logger.info("Successfully cleared %s", dest_dir)
+        except Exception as ex:
+            logger.error("Error clearing directory %s: %s", dest_dir, ex)
+            # Continue anyway - the directory might be partially cleared
 
     sess = requests.Session()
     sess.headers.update({"User-Agent": "Mozilla/5.0 (FloodACE/5.0)"})
