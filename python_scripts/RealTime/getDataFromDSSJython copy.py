@@ -17,10 +17,12 @@ jython_script_path = r"D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\scripts\
 # --- DSS File and Path Details (to be passed to the Jython script) ---
 dss_file_to_process = r"D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\RainrealTime.dss" # !!! UPDATE THIS to your DSS file !!!
 # dss_file_to_process = "/path/to/your/data.dss" # Linux/Mac example
-default_b_part_junction = "CUL-048" # Default value if none provided
+b_part_junction = "CUL-048" # !!! UPDATE THIS to your specific B Part !!!
+c_part_parameter = "FLOW"       # This should be "FLOW" as per your request
+e_part_interval = "1HOUR"       # !!! UPDATE THIS to match your data's interval (e.g., "1DAY", "15MIN") !!!
 
 
-def run_hec_dssvue_script(dss_file, b_part, c_part=None, e_part=None):
+def run_hec_dssvue_script(dss_file, b_part, c_part, e_part):
     """
     Runs the HEC-DSSVue Jython script headlessly.
     Returns the captured standard output and standard error.
@@ -68,7 +70,7 @@ def run_hec_dssvue_script(dss_file, b_part, c_part=None, e_part=None):
         # print("Standard Output (Data from Jython script):")
         # print(process.stdout)
 
-        return stdout, stderr
+        return process.stdout, process.stderr
 
     except FileNotFoundError:
         print(f"ERROR: Could not find or execute HEC-DSSVue: {hec_jython_runner}")
@@ -77,36 +79,54 @@ def run_hec_dssvue_script(dss_file, b_part, c_part=None, e_part=None):
         print(f"ERROR: An unexpected error occurred while running HEC-DSSVue: {e}")
         return None, str(e)
 
-def get_dss_data(b_part_junction=None):
-    """
-    Extract data from DSS file for a specific B part junction.
-    If b_part_junction is not provided, uses the default value.
-    Returns the output data and any error output.
-    """
-    b_part = b_part_junction if b_part_junction else default_b_part_junction
-    print(f"Starting DSS data extraction for junction: {b_part}...")
-    output_data, error_output = run_hec_dssvue_script(
-        dss_file_to_process,
-        b_part,
-        None,  # c_part not used
-        None   # e_part not used
-    )
-    
-    return output_data, error_output
-
 if __name__ == "__main__":
-    import sys
-    
-    # Check if b_part_junction is provided as command line argument
-    b_part = sys.argv[1] if len(sys.argv) > 1 else default_b_part_junction
-    
-    print(f"Starting DSS data extraction for junction: {b_part}...")
+    print("Starting DSS data extraction...")
     output_data, error_output = run_hec_dssvue_script(
         dss_file_to_process,
-        b_part,
-        None,  # c_part parameter variable not defined in original code
-        None   # e_part parameter variable not defined in original code
+        b_part_junction,
+        c_part_parameter,
+        e_part_interval
     )
-    print("output data:", output_data)
+    print("output data :", output_data)
+    if output_data:
+        print("\n--- Extracted Data (CSV Format) ---")
+        #print(output_data.strip()) # .strip() to remove leading/trailing whitespace
+
+        # Optional: Process the data using pandas
+        try:
+            # Use StringIO to treat the string output as a file
+            data_io = StringIO(output_data)
+            df = pd.read_csv(data_io, header=None, names=['DateTime', 'FlowValue'])
+
+            if not df.empty:
+                print("\n--- Data in Pandas DataFrame ---")
+                print(df.head())
+                # print("\nDataFrame Info:")
+                # df.info()
+
+                # Example: Convert DateTime column to actual datetime objects
+                df['DateTime'] = pd.to_datetime(df['DateTime'])
+                # print("\nDataFrame with parsed DateTime:")
+                # print(df.head())
+                # print("\nFlow statistics:")
+                # print(df['FlowValue'].describe())
+
+                # You can now work with the DataFrame (e.g., save to CSV, plot, etc.)
+                # df.to_csv("extracted_flow_data.csv", index=False)
+                # print("\nINFO: Data saved to extracted_flow_data.csv")
+            else:
+                print("\nWARNING: No data was parsed into the DataFrame. The output might be empty or not in the expected format.")
+
+        except pd.errors.EmptyDataError:
+            print("\nWARNING: No data was returned from the Jython script to parse with pandas.")
+        except Exception as e:
+            print(f"\nERROR: Could not process data with pandas: {e}")
+            print("Raw output was:\n", output_data)
+
+    elif error_output:
+        print(f"\n--- Errors Occurred During Extraction ---")
+        # Error messages were already printed by run_hec_dssvue_script
+    else:
+        print("\n--- No data or significant errors reported, but check logs. ---")
 
     print("\nExtraction process finished.")

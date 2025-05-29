@@ -18,7 +18,8 @@ if not logger.hasHandlers():
 # --- Configuration Loading Block ---
 SCRIPT_DIR = os.path.dirname(__file__) if "__file__" in locals() else os.getcwd()
 PROJECT_ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
-CONFIG_FILE = os.path.join(PROJECT_ROOT_DIR, 'config.yaml')
+# Load config from the same directory as the script
+CONFIG_FILE = os.path.join(SCRIPT_DIR, 'config.yaml')
 
 def load_config(config_path=CONFIG_FILE):
     """Loads the YAML configuration file."""
@@ -88,7 +89,7 @@ try:
     # --- Data paths ---
     # Input DSS files
     hrrr_dss_path = resolve_path(config, 'merge_hrrr_forecast', 'output_dss_path')
-    realtime_dss_path = resolve_path(config, 'merge_grb', 'output_dss_path')
+    realtime_dss_path = resolve_path(config, 'merge_grb', 'output_dss_path_pass1_pass2')
 
     # Output DSS file directory (assuming both inputs land in the same merged dir)
     # Using the realtime merge config's output path to determine the directory
@@ -421,13 +422,13 @@ if __name__ == "__main__":
         combine_successful = run_combine_dss()
 
         if combine_successful:
-            logger.info("\n✅ Direct execution: Combine completed successfully.")
+            logger.info("\nDirect execution: Combine completed successfully.")
             sys.exit(0)
         else:
-            logger.error("\n❌ Direct execution: Combine failed.")
+            logger.error("\nDirect execution: Combine failed.")
             sys.exit(1)
 
     except Exception as e:
         # Catch any exceptions raised during setup or run_combine_dss
-        logger.critical(f"\n❌ FATAL ERROR during direct execution: {e}", exc_info=True)
+        logger.critical(f"\nFATAL ERROR during direct execution: {e}", exc_info=True)
         sys.exit(1)
