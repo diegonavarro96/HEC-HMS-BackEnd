@@ -145,8 +145,12 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimePass2Batch.bat",
 			isBatch: true,
 			argsFunc: func() []string {
-				// Pass the full folder path to the batch file
-				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
+				// Pass the arguments as separate elements
+				return []string{
+					fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse),
+					"", // Empty string for shapefile_path to use default
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass2.dss",
+				}
 			},
 		},
 		{
