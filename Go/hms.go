@@ -45,6 +45,34 @@ func executePythonScript(ctx context.Context, scriptPath string, scriptArgs ...s
 	return nil
 }
 
+// executeBatchFile is a helper function to execute a Windows batch file
+func executeBatchFile(ctx context.Context, batchPath string, batchArgs ...string) error {
+	absBatchPath, err := filepath.Abs(batchPath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for batch file %s: %w", batchPath, err)
+	}
+
+	cmdArgs := append([]string{"/c", absBatchPath}, batchArgs...)
+	cmd := exec.CommandContext(ctx, "cmd.exe", cmdArgs...)
+
+	log.Printf("INFO: Executing batch file: cmd.exe %s", strings.Join(cmdArgs, " "))
+
+	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
+
+	if len(output) > 0 {
+		// Log output, prefixing each line for clarity
+		log.Printf("INFO: Output from %s:\n%s", batchPath, indentOutput(string(output)))
+	}
+
+	if err != nil {
+		// If there was an error, CombinedOutput() might still contain useful error messages
+		return fmt.Errorf("failed to execute batch file %s (resolved to %s): %w. Output: %s", batchPath, absBatchPath, err, string(output))
+	}
+
+	log.Printf("INFO: Batch file %s (resolved to %s) completed successfully.", batchPath, absBatchPath)
+	return nil
+}
+
 // indentOutput adds a prefix to each line of a multi-line string for better log readability.
 func indentOutput(output string) string {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -84,11 +112,13 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	scriptsToRun := []struct {
 		name     string
 		path     string
+		isBatch  bool
 		argsFunc func() []string // Function to generate args, allows use of dateToUse/runHourToUse
 	}{
 		{
 			name: "Get GRIB2 Files RealTime",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getgrb2FilesRealTime.py",
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{dateToUse}
 			},
@@ -96,34 +126,42 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		{
 			name: "Get HRRR Forecast GRIB",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getHRRRForecastGrb.py",
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{dateToUse, runHourToUse}
 			},
 		},
 		{
 			name: "Merge GRIB Files RealTime",
-			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/mergeGrbFilesRealTime.py",
+			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimeBatch.bat",
+			isBatch: true,
 			argsFunc: func() []string {
-				return []string{dateToUse}
+				// Pass the full folder path to the batch file
+				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
 			},
 		},
 		{
 			name: "Merge GRIB Files RealTime Pass 2",
-			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/mergeGrbFilesRealTimePass2.py",
+			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimePass2Batch.bat",
+			isBatch: true,
 			argsFunc: func() []string {
-				return []string{dateToUse}
+				// Pass the full folder path to the batch file
+				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
 			},
 		},
 		{
-			name: "Merge HRRR Forecast GRIB",
-			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/mergeHRRRForecastGrb.py",
+			name: "Merge GRIB Files Forcast",
+			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimeHRRBatch.bat",
+			isBatch: true,
 			argsFunc: func() []string {
-				return []string{dateToUse}
+				// Pass the full folder path to the batch file
+				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
 			},
 		},
 		{
 			name: "Combine DSS Records Pass1 Pass2",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/combineDssRecordsPass1Pass2.py",
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{}
 			},
@@ -131,6 +169,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		{
 			name: "Combine DSS Records",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/combineDssRecords.py",
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{}
 			},
@@ -138,6 +177,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		{
 			name: "Set Control File",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/setControlFile.py", // Note: historical path
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{}
 			},
@@ -145,6 +185,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		{
 			name: "Run HMS RealTime",
 			path: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/runHMSRealTime.py",
+			isBatch: false,
 			argsFunc: func() []string {
 				return []string{"6"} // Running with option "6"
 			},
@@ -154,16 +195,29 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	for i, script := range scriptsToRun {
 		stepNum := i + 1
 		log.Printf("STEP %d: Running script '%s'...", stepNum, script.name)
-		err = executePythonScript(ctx, script.path, script.argsFunc()...)
+		
+		// Execute either batch file or Python script based on the isBatch flag
+		if script.isBatch {
+			err = executeBatchFile(ctx, script.path, script.argsFunc()...)
+		} else {
+			err = executePythonScript(ctx, script.path, script.argsFunc()...)
+		}
+		
 		if err != nil {
 			return fmt.Errorf("failed at step %d (%s): %w", stepNum, script.name, err)
 		}
 		log.Printf("STEP %d: Script '%s' completed successfully.", stepNum, script.name)
 		
-		// Add 300ms delay between tasks (except after the last task)
+		// Add delay between tasks (except after the last task)
 		if i < len(scriptsToRun)-1 {
-			log.Printf("INFO: Waiting 300ms before next task...")
-			time.Sleep(300 * time.Millisecond)
+			// Longer delay before Pass 2 merge to ensure resources are released
+			if script.name == "Merge GRIB Files RealTime" {
+				log.Printf("INFO: Waiting 2 seconds before Pass 2 merge task...")
+				time.Sleep(15 * time.Second)
+			} else {
+				log.Printf("INFO: Waiting 300ms before next task...")
+				time.Sleep(1000 * time.Millisecond)
+			}
 		}
 	}
 

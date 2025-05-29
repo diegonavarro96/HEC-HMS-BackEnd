@@ -233,9 +233,9 @@ except Exception as e:
     cmd = [
         jython_exe,
         f"-J-Xms{jython_cfg.get('initial_heap','256m')}",
-        f"-J-Xmx{jython_cfg.get('max_heap','8192m')}",
+        f"-J-Xmx{jython_cfg.get('max_heap','16384m')}", # Increased default max_heap
         f"-J-Djava.library.path={native_paths}",
-        "-J-Djava.util.concurrent.ForkJoinPool.common.parallelism=1",  # Limit parallelism to avoid concurrent issues
+        f"-J-Djava.util.concurrent.ForkJoinPool.common.parallelism=1",  # Limit parallelism to avoid concurrent issues
         "-c",
         jython_code,
     ]

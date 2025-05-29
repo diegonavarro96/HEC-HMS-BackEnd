@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,11 +13,19 @@ import (
 const (
 	sourceFilePath      = `D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\RainrealTime.dss`
 	archiveDirectory    = `D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\dssArchive`
-	hmsPipelineEndpoint = "/api/run-hms-pipeline" // Relative to server base URL
 )
 
+// Additional DSS files to delete (no archiving needed)
+var filesToDelete = []string{
+	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\HRR.dss`,
+	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTime.dss`,
+	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimeAndForcast.dss`,
+	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimePass1And2.dss`,
+	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimePass2.dss`,
+}
+
 // archiveFileAndTriggerPipeline archives the specified file, deletes the original,
-// and then triggers the HMS pipeline.
+// and then runs the HMS pipeline directly.
 func archiveFileAndTriggerPipeline() {
 	log.Println("Scheduler: Starting archive and pipeline trigger process...")
 
@@ -28,12 +35,12 @@ func archiveFileAndTriggerPipeline() {
 		return
 	}
 
-	// Get current hour for the filename
+	// Get current date and hour for the filename
 	currentTime := time.Now()
-	hourStr := currentTime.Format("15") // HH format (24-hour)
+	dateHourStr := currentTime.Format("20060102_15") // YYYYMMDD_HH format
 
-	// Construct archive file name: RainrealTime_HH.dss
-	archiveFileName := fmt.Sprintf("%s_%s%s", filepath.Base(sourceFilePath[:len(sourceFilePath)-len(filepath.Ext(sourceFilePath))]), hourStr, filepath.Ext(sourceFilePath))
+	// Construct archive file name: RainrealTime_YYYYMMDD_HH.dss
+	archiveFileName := fmt.Sprintf("%s_%s%s", filepath.Base(sourceFilePath[:len(sourceFilePath)-len(filepath.Ext(sourceFilePath))]), dateHourStr, filepath.Ext(sourceFilePath))
 	archiveFilePath := filepath.Join(archiveDirectory, archiveFileName)
 
 	log.Printf("Scheduler: Archiving %s to %s\n", sourceFilePath, archiveFilePath)
@@ -93,31 +100,37 @@ func archiveFileAndTriggerPipeline() {
 		// Depending on requirements, this could be a critical failure.
 	}
 
-	// 3. Trigger the HMS pipeline API
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		log.Println("Scheduler: Error: SERVER_PORT environment variable not set. Cannot call API.")
-		return
+	// 3. Delete additional DSS files (no archiving needed)
+	log.Println("Scheduler: Deleting additional DSS files...")
+	for _, filePath := range filesToDelete {
+		if _, err := os.Stat(filePath); err == nil {
+			// File exists, attempt to delete it
+			deleteErr := os.Remove(filePath)
+			if deleteErr != nil {
+				log.Printf("Scheduler: Failed to delete %s: %v\n", filePath, deleteErr)
+			} else {
+				log.Printf("Scheduler: Successfully deleted %s\n", filePath)
+			}
+		} else if !os.IsNotExist(err) {
+			// Some other error occurred when checking file existence
+			log.Printf("Scheduler: Error checking file %s: %v\n", filePath, err)
+		}
+		// If file doesn't exist, do nothing (as requested)
 	}
-	apiURL := fmt.Sprintf("https://localhost:%s%s", serverPort, hmsPipelineEndpoint)
 
-	log.Printf("Scheduler: Calling HMS pipeline API: %s\n", apiURL)
-	// We can send an empty JSON body or specific parameters if the API expects them.
-	// The current handleRunHMSPipeline in main.go can accept an empty body.
-	reqBody := []byte("{}")
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(reqBody))
-	if err != nil {
-		log.Printf("Scheduler: Error calling HMS pipeline API %s: %v\n", apiURL, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
-		log.Printf("Scheduler: HMS pipeline API called successfully, status: %s\n", resp.Status)
+	// 4. Trigger the HMS pipeline directly
+	log.Println("Scheduler: Running HMS pipeline...")
+	
+	// Create a context for the pipeline execution
+	ctx := context.Background()
+	
+	// Run the pipeline with default parameters (empty strings will use defaults)
+	if err := RunProcessingPipeline(ctx, "", ""); err != nil {
+		log.Printf("Scheduler: Error running HMS pipeline: %v\n", err)
 	} else {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		log.Printf("Scheduler: HMS pipeline API call failed, status: %s, response: %s\n", resp.Status, string(bodyBytes))
+		log.Println("Scheduler: HMS pipeline completed successfully")
 	}
+	
 	log.Println("Scheduler: Archive and pipeline trigger process finished.")
 }
 

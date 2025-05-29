@@ -5,8 +5,10 @@ install_paths:
   # IMPORTANT: These paths MUST match the actual installation location on the server.
   # Using standard locations is recommended for consistency. Ensure the specified versions are installed.
   hec_hms: C:/Program Files/HEC/HEC-HMS/4.12   # Example Windows path for HEC-HMS 4.12
+  #jython: C:/Program Files/HEC/HEC-DSSVue
   jython: C:/jython2.7.4                      # Example Windows path for Jython 2.7.4 (adjust if needed)
-  vortex: C:/Program Files/HEC/HEC-Vortex/vortex-0.11.21 # Example Windows path (adjust based on actual install)
+  #vortex: C:/Program Files/HEC/HEC-Vortex/vortex-0.11.25 # Example Windows path (adjust based on actual install)
+  vortex: C:/Program Files/HEC/vortex-0.11.25 # Example Windows path (adjust based on actual install)
   hec_dssvue: "C:/Program Files/HEC/HEC-DSSVue"
 
 data_paths:
