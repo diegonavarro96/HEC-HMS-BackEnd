@@ -186,3 +186,10 @@ type PrecipMeta struct {
 	Width     int        `json:"width"`
 	Height    int        `json:"height"`
 }
+
+type HistoricalDownloadRequest struct {
+	StartDate string `json:"start_date"` // Format: YYYYMMDD
+	EndDate   string `json:"end_date"`   // Format: YYYYMMDD
+	StartTime string `json:"start_time"` // Format: HH:MM (ignored for now)
+	EndTime   string `json:"end_time"`   // Format: HH:MM (ignored for now)
+}

@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -241,10 +239,12 @@ func main() {
 	// Junction flow data endpoint
 	e.POST("/api/get-junction-flow", handleGetJunctionFlow)
 
+	e.GET("/api/get-all-junction-flows", handleGetAllJunctionFlows)
+
 	e.GET("/api/precip/latest", handelGetLatestPrecip)
 
 	//Historical API Calls
-	//e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
+	e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
 
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
@@ -260,135 +260,6 @@ func main() {
 			"error", "\x1b[31m"+err.Error()+"\x1b[0m",
 		)
 	}
-}
-
-// handleRunHMSPipeline handles the request to run the HMS processing pipeline
-func handleRunHMSPipeline(c echo.Context) error {
-	// Define a struct for the request body
-	type PipelineRequest struct {
-		Date    string `json:"date"`     // Optional date in YYYYMMDD format
-		RunHour string `json:"run_hour"` // Optional run hour in HH format
-	}
-
-	// Parse request body
-	var req PipelineRequest
-	if err := c.Bind(&req); err != nil {
-		log.Printf("Error parsing request body: %v", err)
-		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
-	}
-
-	// Log the received parameters
-	log.Printf("Received HMS pipeline request: date=%s, run_hour=%s", req.Date, req.RunHour)
-
-	// Run the pipeline in a goroutine to avoid blocking the HTTP response
-	go func() {
-		// Create a new context with a timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
-		defer cancel()
-
-		// Run the pipeline
-		err := RunProcessingPipeline(ctx, req.Date, req.RunHour)
-		if err != nil {
-			log.Printf("HMS pipeline failed: %v", err)
-		}
-	}()
-
-	// Return a success response immediately
-	return respondWithJSON(c, http.StatusAccepted, map[string]string{
-		"message": "HMS processing pipeline started",
-		"status":  "accepted",
-	})
-}
-
-// handleGetJunctionFlow handles the request to get flow data for a junction
-func handleGetJunctionFlow(c echo.Context) error {
-	// Define a struct for the request body
-	type JunctionRequest struct {
-		BJunctionPart string `json:"b_part_junction"`
-	}
-
-	// Parse request body
-	var req JunctionRequest
-	if err := c.Bind(&req); err != nil {
-		log.Printf("Error parsing junction flow request body: %v", err)
-		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
-	}
-
-	// Log the received parameter
-	log.Printf("Received junction flow request for: %s", req.BJunctionPart)
-
-	// Create context with timeout for the script execution
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	// Execute the Python script directly
-	scriptPath := "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getDataFromDSSJython.py"
-	log.Printf("python script path: %s", scriptPath)
-	err := executePythonScript(ctx, scriptPath, req.BJunctionPart)
-	if err != nil {
-		log.Printf("Error executing Python script for junction flow data: %v", err)
-		return respondWithError(c, http.StatusInternalServerError, "Failed to process junction flow data")
-	}
-
-	// Read the CSV file (assuming the Python script creates/updates this file)
-	csvPath := "../CSV/output.csv"
-	csvData, err := os.ReadFile(csvPath)
-	if err != nil {
-		log.Printf("Error reading CSV file after script execution: %v", err)
-		return respondWithError(c, http.StatusInternalServerError, "Failed to read flow data results")
-	}
-
-	// Parse CSV data
-	lines := strings.Split(string(csvData), "\n")
-	var dataPoints []map[string]interface{}
-
-	// Skip header row if it exists and process data rows
-	startRow := 0
-	if len(lines) > 0 && (strings.Contains(lines[0], "time") || strings.Contains(lines[0], "Time") ||
-		strings.Contains(lines[0], "DATE") || strings.Contains(lines[0], "Date")) {
-		startRow = 1
-	}
-
-	for i := startRow; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, ",")
-		if len(parts) >= 2 {
-			timeStr := strings.TrimSpace(parts[0])
-			valueStr := strings.TrimSpace(parts[1])
-
-			// Use the time string directly from the CSV
-			formattedTime := timeStr
-
-			value, err := strconv.ParseFloat(valueStr, 64)
-			if err != nil {
-				log.Printf("Warning: Could not parse value '%s' as float", valueStr)
-				continue
-			}
-
-			dataPoints = append(dataPoints, map[string]interface{}{
-				"time":  formattedTime,
-				"value": value,
-			})
-		}
-	}
-
-	// Create response with America/Monterrey timezone as specified
-	response := map[string]interface{}{
-		"series": []map[string]interface{}{
-			{
-				"name":     req.BJunctionPart,
-				"unit":     "cfs",
-				"timezone": "UTC", // As specified in requirements
-				"data":     dataPoints,
-			},
-		},
-	}
-
-	return respondWithJSON(c, http.StatusOK, response)
 }
 
 // parseTimeString attempts to parse a time string in various formats
