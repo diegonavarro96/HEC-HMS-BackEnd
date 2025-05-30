@@ -3,6 +3,7 @@ package main
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -16,86 +17,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
-
-// handleDownloadHistoricalMRMS handles the request to download historical MRMS data
-func handleDownloadHistoricalMRMS(c echo.Context) error {
-	var req HistoricalDownloadRequest
-	if err := c.Bind(&req); err != nil {
-		log.Printf("Error parsing historical download request: %v", err)
-		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
-	}
-
-	// Validate dates
-	startDate, err := time.Parse("20060102", req.StartDate)
-	if err != nil {
-		return respondWithError(c, http.StatusBadRequest, "Invalid start date format. Please use YYYYMMDD")
-	}
-
-	endDate, err := time.Parse("20060102", req.EndDate)
-	if err != nil {
-		return respondWithError(c, http.StatusBadRequest, "Invalid end date format. Please use YYYYMMDD")
-	}
-
-	// Check if dates are in valid range (2021 to current)
-	minDate := time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
-	maxDate := time.Now()
-
-	if startDate.Before(minDate) || endDate.Before(minDate) {
-		return respondWithError(c, http.StatusBadRequest, "Please use dates from 2021 to the current date. Historical data before 2021 is not available.")
-	}
-
-	if startDate.After(maxDate) || endDate.After(maxDate) {
-		return respondWithError(c, http.StatusBadRequest, "Please use dates that are not in the future")
-	}
-
-	if startDate.After(endDate) {
-		return respondWithError(c, http.StatusBadRequest, "Start date must be before or equal to end date")
-	}
-
-	// Check if date range is within 5 days
-	daysDifference := int(endDate.Sub(startDate).Hours() / 24)
-	if daysDifference > 4 { // 0-4 days = 5 days inclusive
-		return respondWithError(c, http.StatusBadRequest, "Date range cannot exceed 5 days. Please select dates within 5 days of each other")
-	}
-
-	// Create output directory
-	outputDir := filepath.Join("D:/FloodaceDocuments/HMS/HMSBackend/gribFiles", "historical", req.EndDate)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		log.Printf("Error creating output directory: %v", err)
-		return respondWithError(c, http.StatusInternalServerError, "Failed to create output directory")
-	}
-
-	// Download files for each day
-	log.Printf("Starting historical MRMS download from %s to %s", req.StartDate, req.EndDate)
-
-	currentDate := startDate
-	downloadedCount := 0
-	failedDates := []string{}
-
-	for !currentDate.After(endDate) {
-		err := downloadMRMSForDate(currentDate, outputDir)
-		if err != nil {
-			log.Printf("Failed to download data for %s: %v", currentDate.Format("20060102"), err)
-			failedDates = append(failedDates, currentDate.Format("20060102"))
-		} else {
-			downloadedCount++
-		}
-		currentDate = currentDate.AddDate(0, 0, 1)
-	}
-
-	response := map[string]interface{}{
-		"message":          fmt.Sprintf("Downloaded MRMS data for %d days", downloadedCount),
-		"output_directory": outputDir,
-		"total_days":       int(endDate.Sub(startDate).Hours()/24) + 1,
-		"downloaded":       downloadedCount,
-	}
-
-	if len(failedDates) > 0 {
-		response["failed_dates"] = failedDates
-	}
-
-	return respondWithJSON(c, http.StatusOK, response)
-}
 
 // downloadMRMSForDate downloads all MRMS files for a specific date
 func downloadMRMSForDate(date time.Time, outputDir string) error {
@@ -181,18 +102,18 @@ func roundTimeDown(timeStr string) string {
 	if timeStr == "" {
 		return "00:00"
 	}
-	
+
 	// Parse time string (expecting HH:MM format)
 	parts := strings.Split(timeStr, ":")
 	if len(parts) != 2 {
 		return "00:00"
 	}
-	
+
 	hour, err := strconv.Atoi(parts[0])
 	if err != nil || hour < 0 || hour > 23 {
 		return "00:00"
 	}
-	
+
 	return fmt.Sprintf("%02d:00", hour)
 }
 
@@ -201,23 +122,23 @@ func roundTimeUp(timeStr string) string {
 	if timeStr == "" {
 		return "23:00"
 	}
-	
+
 	// Parse time string (expecting HH:MM format)
 	parts := strings.Split(timeStr, ":")
 	if len(parts) != 2 {
 		return "23:00"
 	}
-	
+
 	hour, err := strconv.Atoi(parts[0])
 	if err != nil || hour < 0 || hour > 23 {
 		return "23:00"
 	}
-	
+
 	minute, err := strconv.Atoi(parts[1])
 	if err != nil || minute < 0 || minute > 59 {
 		return "23:00"
 	}
-	
+
 	// If minutes > 0, round up to next hour
 	if minute > 0 {
 		hour++
@@ -225,7 +146,7 @@ func roundTimeUp(timeStr string) string {
 			hour = 23 // Cap at 23:00
 		}
 	}
-	
+
 	return fmt.Sprintf("%02d:00", hour)
 }
 
@@ -233,31 +154,31 @@ func roundTimeUp(timeStr string) string {
 func updateHistoricalControlFile(startDate, endDate time.Time, startTime, endTime string) error {
 	// Path to the control file
 	controlFilePath := "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.control"
-	
+
 	// Format dates for the control file (e.g., "9 May 2025")
 	startDateStr := startDate.Format("2 January 2006")
 	endDateStr := endDate.Format("2 January 2006")
-	
+
 	// Round times appropriately
 	startTimeRounded := roundTimeDown(startTime)
 	endTimeRounded := roundTimeUp(endTime)
-	
-	log.Printf("Updating control file with: Start: %s %s, End: %s %s", 
+
+	log.Printf("Updating control file with: Start: %s %s, End: %s %s",
 		startDateStr, startTimeRounded, endDateStr, endTimeRounded)
-	
+
 	// Read the control file
 	content, err := os.ReadFile(controlFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read control file: %w", err)
 	}
-	
+
 	lines := strings.Split(string(content), "\n")
 	updatedLines := make([]string, 0, len(lines))
-	
+
 	// Update specific lines
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
-		
+
 		switch {
 		case strings.HasPrefix(trimmedLine, "Start Date:"):
 			updatedLines = append(updatedLines, fmt.Sprintf("     Start Date: %s", startDateStr))
@@ -271,14 +192,14 @@ func updateHistoricalControlFile(startDate, endDate time.Time, startTime, endTim
 			updatedLines = append(updatedLines, line)
 		}
 	}
-	
+
 	// Write back to file
 	updatedContent := strings.Join(updatedLines, "\n")
 	err = os.WriteFile(controlFilePath, []byte(updatedContent), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write control file: %w", err)
 	}
-	
+
 	log.Printf("Successfully updated control file: %s", controlFilePath)
 	return nil
 }
@@ -299,7 +220,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 			log.Printf("Successfully deleted existing RainHistorical.dss file")
 		}
 	}
-	
+
 	// Delete RainfallHistorical.dss
 	existingDSSPath2 := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\Rainfall\\RainfallHistorical.dss"
 	if _, err := os.Stat(existingDSSPath2); err == nil {
@@ -398,29 +319,29 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Step 3: Update the control file
 	log.Printf("STEP 3: Updating control file with dates and times...")
-	
+
 	err = updateHistoricalControlFile(startDate, endDate, req.StartTime, req.EndTime)
 	if err != nil {
 		return fmt.Errorf("failed to update control file: %w", err)
 	}
-	
+
 	log.Printf("STEP 3 COMPLETE: Successfully updated control file")
 
 	// Step 4: Run HMS historical computation
 	log.Printf("STEP 4: Running HMS historical computation...")
-	
+
 	// Build the command
 	hmsExePath := "C:\\Program Files\\HEC\\HEC-HMS\\4.12\\HEC-HMS.cmd"
 	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\HMSScripts\\computeHistorical.script"
 	hmsDir := "C:\\Program Files\\HEC\\HEC-HMS\\4.12"
-	
+
 	// Execute the HMS command from its directory
 	cmd := exec.CommandContext(ctx, hmsExePath, "-script", scriptPath)
-	cmd.Dir = hmsDir  // Set working directory to HEC-HMS installation
-	
+	cmd.Dir = hmsDir // Set working directory to HEC-HMS installation
+
 	// Run the command and capture output
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		// Check if it's an exit error to get the exit code
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -431,7 +352,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 		log.Printf("HMS computation failed: %v. Output: %s", err, string(output))
 		return fmt.Errorf("failed to run HMS computation: %w", err)
 	}
-	
+
 	log.Printf("STEP 4 COMPLETE: HMS historical computation completed successfully")
 	log.Printf("HMS output:\n%s", indentOutput(string(output)))
 
@@ -478,4 +399,87 @@ func handleRunHMSPipelineHistorical(c echo.Context) error {
 		"start_date": req.StartDate,
 		"end_date":   req.EndDate,
 	})
+}
+
+// ExtractDSSDataRequest represents the request body for extracting DSS data
+type ExtractDSSDataRequest struct {
+	TargetBPart string `json:"target_b_part"` // e.g., "CUL-041"
+	Month       string `json:"month"`         // e.g., "January"
+	Year        string `json:"year"`          // e.g., "2025"
+}
+
+// runExtractDSSDataJython runs the Jython script to extract DSS data
+func runExtractDSSDataJython(ctx context.Context, targetBPart, month, year string) error {
+	log.Printf("INFO: Extracting DSS data for %s in %s %s", targetBPart, month, year)
+	
+	// Paths
+	jythonPath := "C:\\Program Files\\HEC\\HEC-DSSVue\\Jython.bat"
+	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\python_scripts\\Jython_Scripts\\extract_dss_data_historical.py"
+	
+	// Build command with arguments
+	cmd := exec.CommandContext(ctx, jythonPath, scriptPath, targetBPart, month, year)
+	
+	// Run the command and capture output
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		// Check if it's an exit error to get the exit code
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode := exitErr.ExitCode()
+			log.Printf("Jython script failed with exit code %d. Output: %s", exitCode, string(output))
+			return fmt.Errorf("Jython script failed with exit code %d", exitCode)
+		}
+		log.Printf("Jython script failed: %v. Output: %s", err, string(output))
+		return fmt.Errorf("failed to run Jython script: %w", err)
+	}
+	
+	log.Printf("Successfully extracted DSS data. Output:\n%s", indentOutput(string(output)))
+	return nil
+}
+
+// handleExtractHistoricalDSSData handles the request to extract historical DSS data
+func handleExtractHistoricalDSSData(c echo.Context) error {
+	// Parse request body
+	var req ExtractDSSDataRequest
+	if err := c.Bind(&req); err != nil {
+		log.Printf("Error parsing extract DSS data request: %v", err)
+		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
+	}
+	
+	// Validate required fields
+	if req.TargetBPart == "" || req.Month == "" || req.Year == "" {
+		return respondWithError(c, http.StatusBadRequest, "target_b_part, month, and year are required")
+	}
+	
+	log.Printf("Received extract DSS data request: target_b_part=%s, month=%s, year=%s", 
+		req.TargetBPart, req.Month, req.Year)
+	
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	
+	// Run the Jython script
+	err := runExtractDSSDataJython(ctx, req.TargetBPart, req.Month, req.Year)
+	if err != nil {
+		log.Printf("Failed to extract DSS data: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, "Failed to extract DSS data")
+	}
+	
+	// Read the generated JSON file
+	jsonFilePath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\JSON\\outputHistorical.json"
+	jsonData, err := os.ReadFile(jsonFilePath)
+	if err != nil {
+		log.Printf("Failed to read output JSON file: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, "Failed to read extracted data")
+	}
+	
+	// Parse the JSON to verify it's valid
+	var result map[string]interface{}
+	if err := json.Unmarshal(jsonData, &result); err != nil {
+		log.Printf("Failed to parse output JSON: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, "Invalid JSON output")
+	}
+	
+	// Return the JSON data
+	return c.JSON(http.StatusOK, result)
 }

@@ -245,6 +245,7 @@ func main() {
 
 	//Historical API Calls
 	e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
+	e.POST("/api/extract-historical-dss-data", handleExtractHistoricalDSSData)
 
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
