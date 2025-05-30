@@ -401,70 +401,50 @@ func handleRunHMSPipelineHistorical(c echo.Context) error {
 	})
 }
 
-// ExtractDSSDataRequest represents the request body for extracting DSS data
-type ExtractDSSDataRequest struct {
-	TargetBPart string `json:"target_b_part"` // e.g., "CUL-041"
-	Month       string `json:"month"`         // e.g., "January"
-	Year        string `json:"year"`          // e.g., "2025"
-}
+// runExtractDSSDataJython runs the Jython script to extract DSS data for all junctions
+func runExtractDSSDataJython(ctx context.Context) error {
+	log.Printf("INFO: Extracting DSS data for all junctions")
 
-// runExtractDSSDataJython runs the Jython script to extract DSS data
-func runExtractDSSDataJython(ctx context.Context, targetBPart, month, year string) error {
-	log.Printf("INFO: Extracting DSS data for %s in %s %s", targetBPart, month, year)
-	
 	// Paths
 	jythonPath := "C:\\Program Files\\HEC\\HEC-DSSVue\\Jython.bat"
 	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\python_scripts\\Jython_Scripts\\extract_dss_data_historical.py"
-	
-	// Build command with arguments
-	cmd := exec.CommandContext(ctx, jythonPath, scriptPath, targetBPart, month, year)
-	
+
+	// Build command with no arguments (script extracts all junctions)
+	cmd := exec.CommandContext(ctx, jythonPath, scriptPath)
+
 	// Run the command and capture output
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		// Check if it's an exit error to get the exit code
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode := exitErr.ExitCode()
 			log.Printf("Jython script failed with exit code %d. Output: %s", exitCode, string(output))
-			return fmt.Errorf("Jython script failed with exit code %d", exitCode)
+			return fmt.Errorf("jython script failed with exit code %d", exitCode)
 		}
 		log.Printf("Jython script failed: %v. Output: %s", err, string(output))
 		return fmt.Errorf("failed to run Jython script: %w", err)
 	}
-	
+
 	log.Printf("Successfully extracted DSS data. Output:\n%s", indentOutput(string(output)))
 	return nil
 }
 
-// handleExtractHistoricalDSSData handles the request to extract historical DSS data
+// handleExtractHistoricalDSSData handles the request to extract historical DSS data for all junctions
 func handleExtractHistoricalDSSData(c echo.Context) error {
-	// Parse request body
-	var req ExtractDSSDataRequest
-	if err := c.Bind(&req); err != nil {
-		log.Printf("Error parsing extract DSS data request: %v", err)
-		return respondWithError(c, http.StatusBadRequest, "Invalid request format")
-	}
-	
-	// Validate required fields
-	if req.TargetBPart == "" || req.Month == "" || req.Year == "" {
-		return respondWithError(c, http.StatusBadRequest, "target_b_part, month, and year are required")
-	}
-	
-	log.Printf("Received extract DSS data request: target_b_part=%s, month=%s, year=%s", 
-		req.TargetBPart, req.Month, req.Year)
-	
+	log.Printf("Received request to extract DSS data for all junctions")
+
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	
-	// Run the Jython script
-	err := runExtractDSSDataJython(ctx, req.TargetBPart, req.Month, req.Year)
+
+	// Run the Jython script (no parameters needed)
+	err := runExtractDSSDataJython(ctx)
 	if err != nil {
 		log.Printf("Failed to extract DSS data: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "Failed to extract DSS data")
 	}
-	
+
 	// Read the generated JSON file
 	jsonFilePath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\JSON\\outputHistorical.json"
 	jsonData, err := os.ReadFile(jsonFilePath)
@@ -472,14 +452,14 @@ func handleExtractHistoricalDSSData(c echo.Context) error {
 		log.Printf("Failed to read output JSON file: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "Failed to read extracted data")
 	}
-	
+
 	// Parse the JSON to verify it's valid
 	var result map[string]interface{}
 	if err := json.Unmarshal(jsonData, &result); err != nil {
 		log.Printf("Failed to parse output JSON: %v", err)
 		return respondWithError(c, http.StatusInternalServerError, "Invalid JSON output")
 	}
-	
+
 	// Return the JSON data
 	return c.JSON(http.StatusOK, result)
 }

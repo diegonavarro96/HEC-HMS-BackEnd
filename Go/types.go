@@ -193,3 +193,8 @@ type HistoricalDownloadRequest struct {
 	StartTime string `json:"start_time"` // Format: HH:MM (ignored for now)
 	EndTime   string `json:"end_time"`   // Format: HH:MM (ignored for now)
 }
+
+// ExtractDSSDataRequest represents the request body for extracting DSS data
+type ExtractDSSDataRequest struct {
+	TargetBPart string `json:"b_part_junction"` // e.g., "CUL-041"
+}
