@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -173,6 +175,113 @@ func downloadAndExtractFile(client *http.Client, url string, outputDir string) e
 	return nil
 }
 
+// roundTimeDown rounds time down to the nearest hour (e.g., 10:24 -> 10:00)
+func roundTimeDown(timeStr string) string {
+	if timeStr == "" {
+		return "00:00"
+	}
+	
+	// Parse time string (expecting HH:MM format)
+	parts := strings.Split(timeStr, ":")
+	if len(parts) != 2 {
+		return "00:00"
+	}
+	
+	hour, err := strconv.Atoi(parts[0])
+	if err != nil || hour < 0 || hour > 23 {
+		return "00:00"
+	}
+	
+	return fmt.Sprintf("%02d:00", hour)
+}
+
+// roundTimeUp rounds time up to the next hour (e.g., 11:01 -> 12:00, 11:00 -> 11:00)
+func roundTimeUp(timeStr string) string {
+	if timeStr == "" {
+		return "23:00"
+	}
+	
+	// Parse time string (expecting HH:MM format)
+	parts := strings.Split(timeStr, ":")
+	if len(parts) != 2 {
+		return "23:00"
+	}
+	
+	hour, err := strconv.Atoi(parts[0])
+	if err != nil || hour < 0 || hour > 23 {
+		return "23:00"
+	}
+	
+	minute, err := strconv.Atoi(parts[1])
+	if err != nil || minute < 0 || minute > 59 {
+		return "23:00"
+	}
+	
+	// If minutes > 0, round up to next hour
+	if minute > 0 {
+		hour++
+		if hour > 23 {
+			hour = 23 // Cap at 23:00
+		}
+	}
+	
+	return fmt.Sprintf("%02d:00", hour)
+}
+
+// updateHistoricalControlFile updates the control file with the specified dates and times
+func updateHistoricalControlFile(startDate, endDate time.Time, startTime, endTime string) error {
+	// Path to the control file
+	controlFilePath := "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.control"
+	
+	// Format dates for the control file (e.g., "9 May 2025")
+	startDateStr := startDate.Format("2 January 2006")
+	endDateStr := endDate.Format("2 January 2006")
+	
+	// Round times appropriately
+	startTimeRounded := roundTimeDown(startTime)
+	endTimeRounded := roundTimeUp(endTime)
+	
+	log.Printf("Updating control file with: Start: %s %s, End: %s %s", 
+		startDateStr, startTimeRounded, endDateStr, endTimeRounded)
+	
+	// Read the control file
+	content, err := os.ReadFile(controlFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read control file: %w", err)
+	}
+	
+	lines := strings.Split(string(content), "\n")
+	updatedLines := make([]string, 0, len(lines))
+	
+	// Update specific lines
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		
+		switch {
+		case strings.HasPrefix(trimmedLine, "Start Date:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     Start Date: %s", startDateStr))
+		case strings.HasPrefix(trimmedLine, "Start Time:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     Start Time: %s", startTimeRounded))
+		case strings.HasPrefix(trimmedLine, "End Date:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     End Date: %s", endDateStr))
+		case strings.HasPrefix(trimmedLine, "End Time:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     End Time: %s", endTimeRounded))
+		default:
+			updatedLines = append(updatedLines, line)
+		}
+	}
+	
+	// Write back to file
+	updatedContent := strings.Join(updatedLines, "\n")
+	err = os.WriteFile(controlFilePath, []byte(updatedContent), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write control file: %w", err)
+	}
+	
+	log.Printf("Successfully updated control file: %s", controlFilePath)
+	return nil
+}
+
 // runHMSPipelineHistorical orchestrates the complete historical HMS processing pipeline
 func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest) error {
 	log.Printf("INFO: Starting historical HMS pipeline from %s to %s", req.StartDate, req.EndDate)
@@ -260,6 +369,16 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	}
 
 	log.Printf("STEP 2 COMPLETE: Successfully merged GRIB files to: %s", outputDSS)
+
+	// Step 3: Update the control file
+	log.Printf("STEP 3: Updating control file with dates and times...")
+	
+	err = updateHistoricalControlFile(startDate, endDate, req.StartTime, req.EndTime)
+	if err != nil {
+		return fmt.Errorf("failed to update control file: %w", err)
+	}
+	
+	log.Printf("STEP 3 COMPLETE: Successfully updated control file")
 
 	// TODO: Add additional steps for the historical pipeline here
 
