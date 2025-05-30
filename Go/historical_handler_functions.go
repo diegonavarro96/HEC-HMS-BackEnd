@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -286,6 +287,31 @@ func updateHistoricalControlFile(startDate, endDate time.Time, startTime, endTim
 func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest) error {
 	log.Printf("INFO: Starting historical HMS pipeline from %s to %s", req.StartDate, req.EndDate)
 
+	// Step 0: Delete existing DSS files if they exist
+	// Delete RainHistorical.dss
+	existingDSSPath1 := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\RainHistorical.dss"
+	if _, err := os.Stat(existingDSSPath1); err == nil {
+		log.Printf("Deleting existing RainHistorical.dss file...")
+		if err := os.Remove(existingDSSPath1); err != nil {
+			log.Printf("Warning: Failed to delete existing DSS file: %v", err)
+			// Continue anyway as it might get overwritten
+		} else {
+			log.Printf("Successfully deleted existing RainHistorical.dss file")
+		}
+	}
+	
+	// Delete RainfallHistorical.dss
+	existingDSSPath2 := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\Rainfall\\RainfallHistorical.dss"
+	if _, err := os.Stat(existingDSSPath2); err == nil {
+		log.Printf("Deleting existing RainfallHistorical.dss file...")
+		if err := os.Remove(existingDSSPath2); err != nil {
+			log.Printf("Warning: Failed to delete existing Rainfall DSS file: %v", err)
+			// Continue anyway as it might get overwritten
+		} else {
+			log.Printf("Successfully deleted existing RainfallHistorical.dss file")
+		}
+	}
+
 	// Step 1: Download historical MRMS data
 	log.Printf("STEP 1: Downloading historical MRMS data...")
 
@@ -380,7 +406,34 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	
 	log.Printf("STEP 3 COMPLETE: Successfully updated control file")
 
-	// TODO: Add additional steps for the historical pipeline here
+	// Step 4: Run HMS historical computation
+	log.Printf("STEP 4: Running HMS historical computation...")
+	
+	// Build the command
+	hmsExePath := "C:\\Program Files\\HEC\\HEC-HMS\\4.12\\HEC-HMS.cmd"
+	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\HMSScripts\\computeHistorical.script"
+	hmsDir := "C:\\Program Files\\HEC\\HEC-HMS\\4.12"
+	
+	// Execute the HMS command from its directory
+	cmd := exec.CommandContext(ctx, hmsExePath, "-script", scriptPath)
+	cmd.Dir = hmsDir  // Set working directory to HEC-HMS installation
+	
+	// Run the command and capture output
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		// Check if it's an exit error to get the exit code
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode := exitErr.ExitCode()
+			log.Printf("HMS computation failed with exit code %d. Output: %s", exitCode, string(output))
+			return fmt.Errorf("HMS computation failed with exit code %d", exitCode)
+		}
+		log.Printf("HMS computation failed: %v. Output: %s", err, string(output))
+		return fmt.Errorf("failed to run HMS computation: %w", err)
+	}
+	
+	log.Printf("STEP 4 COMPLETE: HMS historical computation completed successfully")
+	log.Printf("HMS output:\n%s", indentOutput(string(output)))
 
 	log.Printf("INFO: Historical HMS pipeline completed successfully")
 	return nil
