@@ -1,21 +1,20 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
-	"path/filepath" // Added for filepath.Abs
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
-	// "os" // No longer needed for os.Getenv for URLs
-	// "bytes" // No longer needed
-	// "encoding/json" // No longer needed
-	// "io" // No longer needed
-	// "net/http" // No longer needed
 )
 
 const pythonExePath = `C:\Users\diego\anaconda3\envs\HMS\python.exe`
@@ -56,10 +55,9 @@ func executeJythonScript(ctx context.Context, scriptPath string) error {
 		return fmt.Errorf("failed to get absolute path for script %s: %w", scriptPath, err)
 	}
 
-	cmdArgs := append([]string{absScriptPath})
-	cmd := exec.CommandContext(ctx, jythonExePath, cmdArgs...)
+	cmd := exec.CommandContext(ctx, jythonExePath, absScriptPath)
 
-	log.Printf("INFO: Executing command: %s %s", jythonExePath, strings.Join(cmdArgs, " "))
+	log.Printf("INFO: Executing command: %s %s", jythonExePath, absScriptPath)
 
 	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
 
@@ -114,6 +112,304 @@ func indentOutput(output string) string {
 	return strings.Join(lines, "\n")
 }
 
+// GRIBDownloadConfig holds configuration for GRIB file downloads
+type GRIBDownloadConfig struct {
+	BaseURLRealtime string
+	BaseURLArchive  string
+	OutputDir       string
+	HoursBack       int
+	DaysBack        int
+}
+
+// downloadAndExtractGzFile downloads a gzipped file and extracts it
+func downloadAndExtractGzFile(url string, destPath string) error {
+	// Create the destination directory if it doesn't exist
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Download the file
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	// Check if content is HTML (error page)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") {
+		return fmt.Errorf("received HTML instead of GRIB file")
+	}
+
+	// Determine if the file is gzipped based on extension
+	isGzipped := strings.HasSuffix(url, ".gz")
+	finalPath := destPath
+
+	if isGzipped {
+		// If gzipped, remove .gz extension from final path
+		finalPath = strings.TrimSuffix(destPath, ".gz")
+
+		// Create gzip reader
+		gzReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer gzReader.Close()
+
+		// Create output file
+		outFile, err := os.Create(finalPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer outFile.Close()
+
+		// Copy uncompressed data
+		if _, err := io.Copy(outFile, gzReader); err != nil {
+			return fmt.Errorf("failed to extract file: %w", err)
+		}
+	} else {
+		// Not gzipped, save directly
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer outFile.Close()
+
+		if _, err := io.Copy(outFile, resp.Body); err != nil {
+			return fmt.Errorf("failed to save file: %w", err)
+		}
+	}
+
+	log.Printf("Successfully downloaded and extracted: %s", filepath.Base(finalPath))
+	return nil
+}
+
+// parseGRIBFilename extracts timestamp from GRIB filename
+func parseGRIBFilename(filename string) (time.Time, error) {
+	// Pattern: _YYYYMMDD-HHMMSS.grib2
+	re := regexp.MustCompile(`_(\d{8})-(\d{6})\.grib2`)
+	matches := re.FindStringSubmatch(filename)
+	if len(matches) != 3 {
+		return time.Time{}, fmt.Errorf("filename doesn't match expected pattern")
+	}
+
+	timeStr := matches[1] + matches[2]
+	return time.Parse("20060102150405", timeStr)
+}
+
+// fetchDirectoryListing fetches and parses directory listing from URL
+func fetchDirectoryListing(url string) ([]string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch directory listing: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Parse HTML to find links
+	var links []string
+	// Simple regex to find href links - could use html parser for more robustness
+	re := regexp.MustCompile(`href="([^"]+\.grib2(?:\.gz)?)"`)
+	matches := re.FindAllStringSubmatch(string(body), -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			links = append(links, match[1])
+		}
+	}
+
+	return links, nil
+}
+
+// downloadGRIBFilesRealtime downloads GRIB files from real-time source
+func downloadGRIBFilesRealtime(config GRIBDownloadConfig, dateStr string) error {
+	log.Printf("INFO: Downloading real-time GRIB files for date: %s", dateStr)
+	log.Printf("INFO: Real-time window: last %d hours", config.HoursBack)
+
+	// Clear existing files in output directory
+	if _, err := os.Stat(config.OutputDir); err == nil {
+		log.Printf("INFO: Clearing existing files in %s", config.OutputDir)
+		files, _ := os.ReadDir(config.OutputDir)
+		for _, file := range files {
+			filePath := filepath.Join(config.OutputDir, file.Name())
+			if err := os.Remove(filePath); err != nil {
+				log.Printf("Warning: Failed to remove %s: %v", filePath, err)
+			}
+		}
+	}
+
+	// Fetch directory listing
+	links, err := fetchDirectoryListing(config.BaseURLRealtime)
+	if err != nil {
+		return fmt.Errorf("failed to fetch real-time directory listing: %w", err)
+	}
+
+	if len(links) == 0 {
+		log.Printf("INFO: No files found in real-time directory")
+		return nil
+	}
+
+	// Calculate cutoff time
+	cutoffTime := time.Now().UTC().Add(-time.Duration(config.HoursBack) * time.Hour)
+	downloadCount := 0
+
+	for _, link := range links {
+		// Parse timestamp from filename
+		fileTime, err := parseGRIBFilename(link)
+		if err != nil {
+			continue
+		}
+
+		// Skip if older than cutoff
+		if fileTime.Before(cutoffTime) {
+			continue
+		}
+
+		// Construct full URL and destination path
+		fileURL := config.BaseURLRealtime + link
+		destPath := filepath.Join(config.OutputDir, link)
+
+		// Check if already exists (without .gz extension if applicable)
+		finalPath := strings.TrimSuffix(destPath, ".gz")
+		if _, err := os.Stat(finalPath); err == nil {
+			continue
+		}
+
+		// Download and extract
+		if err := downloadAndExtractGzFile(fileURL, destPath); err != nil {
+			log.Printf("Warning: Failed to download %s: %v", link, err)
+			continue
+		}
+		downloadCount++
+	}
+
+	log.Printf("INFO: Downloaded %d real-time files", downloadCount)
+	return nil
+}
+
+// downloadGRIBFilesArchive downloads GRIB files from archive source
+func downloadGRIBFilesArchive(config GRIBDownloadConfig, dateStr string) error {
+	log.Printf("INFO: Downloading archive GRIB files")
+	log.Printf("INFO: Archive window: 24-48 hours ago")
+
+	baseDate, err := time.Parse("20060102", dateStr)
+	if err != nil {
+		return fmt.Errorf("invalid date format: %w", err)
+	}
+
+	totalDownloaded := 0
+
+	// Calculate time window for archive files (24-48 hours ago)
+	now := time.Now().UTC()
+	cutoffStart := now.Add(-48 * time.Hour)
+	cutoffEnd := now.Add(-24 * time.Hour)
+
+	// Download for each day going back
+	for d := 0; d <= config.DaysBack; d++ {
+		targetDate := baseDate.AddDate(0, 0, -d)
+
+		// Construct archive URL with date
+		year := targetDate.Format("2006")
+		month := targetDate.Format("01")
+		day := targetDate.Format("02")
+		dayURL := fmt.Sprintf("%s%s/%s/%s/mrms/ncep/MultiSensor_QPE_01H_Pass2/", config.BaseURLArchive, year, month, day)
+		log.Printf("Day URL: %s", dayURL)
+
+		log.Printf("INFO: Checking archive for %s", targetDate.Format("2006-01-02"))
+
+		// Fetch directory listing
+		links, err := fetchDirectoryListing(dayURL)
+		if err != nil {
+			log.Printf("Warning: Failed to fetch archive listing for %s: %v", targetDate.Format("2006-01-02"), err)
+			continue
+		}
+
+		if len(links) == 0 {
+			log.Printf("INFO: No files found for %s", targetDate.Format("2006-01-02"))
+			continue
+		}
+
+		// Download each file
+		for _, link := range links {
+			// Parse timestamp from filename to filter by time window
+			fileTime, err := parseGRIBFilename(link)
+			if err != nil {
+				continue
+			}
+
+			// Only download files within the 24-48 hour window
+			if fileTime.Before(cutoffStart) || fileTime.After(cutoffEnd) {
+				continue
+			}
+
+			fileURL := dayURL + link
+			destPath := filepath.Join(config.OutputDir, link)
+
+			// Check if already exists
+			finalPath := strings.TrimSuffix(destPath, ".gz")
+			if _, err := os.Stat(finalPath); err == nil {
+				continue
+			}
+
+			// Download and extract
+			if err := downloadAndExtractGzFile(fileURL, destPath); err != nil {
+				log.Printf("Warning: Failed to download %s: %v", link, err)
+				continue
+			}
+			totalDownloaded++
+		}
+	}
+
+	log.Printf("INFO: Downloaded %d archive files", totalDownloaded)
+	return nil
+}
+
+// downloadGRIBFiles is the main function that replaces the Python script
+func downloadGRIBFiles(dateStr string, includeYesterday bool) error {
+	// Use current date if not provided
+	if dateStr == "" {
+		dateStr = time.Now().Format("20060102")
+	}
+
+	// Configure download parameters
+	config := GRIBDownloadConfig{
+		BaseURLRealtime: "https://mrms.ncep.noaa.gov/2D/MultiSensor_QPE_01H_Pass1/",
+		BaseURLArchive:  "https://mtarchive.geol.iastate.edu/",
+		OutputDir:       fmt.Sprintf("D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads/%s", dateStr),
+		HoursBack:       24, // Real-time: last 24 hours
+		DaysBack:        2,  // Archive: need to check 2 days back to ensure we cover 24-48 hours ago
+	}
+
+	if !includeYesterday {
+		config.DaysBack = 0
+	}
+
+	// Download from real-time source
+	if err := downloadGRIBFilesRealtime(config, dateStr); err != nil {
+		log.Printf("Error downloading real-time files: %v", err)
+	}
+
+	// Download from archive source
+	if err := downloadGRIBFilesArchive(config, dateStr); err != nil {
+		log.Printf("Error downloading archive files: %v", err)
+	}
+
+	return nil
+}
+
 // RunProcessingPipeline orchestrates a sequence of Python script executions.
 // It accepts an optional date in YYYYMMDD format and an optional run hour in HH format.
 func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, optionalRunHourHH string) error {
@@ -140,21 +436,23 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 
 	var err error
 
-	// Script execution steps
+	// Step 1: Download GRIB files using Go function
+	log.Printf("STEP 1: Running 'Get GRIB2 Files RealTime'...")
+	err = downloadGRIBFiles(dateToUse, true) // includeYesterday = true
+	if err != nil {
+		return fmt.Errorf("failed at step 1 (Get GRIB2 Files RealTime): %w", err)
+	}
+	log.Printf("STEP 1: 'Get GRIB2 Files RealTime' completed successfully.")
+	log.Printf("INFO: Waiting 300ms before next task...")
+	time.Sleep(1000 * time.Millisecond)
+
+	// Script execution steps (starting from step 2)
 	scriptsToRun := []struct {
 		name     string
 		path     string
 		isBatch  bool
 		argsFunc func() []string // Function to generate args, allows use of dateToUse/runHourToUse
 	}{
-		{
-			name:    "Get GRIB2 Files RealTime",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getgrb2FilesRealTime.py",
-			isBatch: false,
-			argsFunc: func() []string {
-				return []string{dateToUse}
-			},
-		},
 		{
 			name:    "Get HRRR Forecast GRIB",
 			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getHRRRForecastGrb.py",
@@ -229,7 +527,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	}
 
 	for i, script := range scriptsToRun {
-		stepNum := i + 1
+		stepNum := i + 2 // Starting from step 2 since step 1 is now handled by Go
 		log.Printf("STEP %d: Running script '%s'...", stepNum, script.name)
 
 		// Execute either batch file or Python script based on the isBatch flag

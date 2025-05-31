@@ -377,25 +377,23 @@ func handleRunHMSPipelineHistorical(c echo.Context) error {
 	log.Printf("Received historical HMS pipeline request: start=%s, end=%s, start_time=%s, end_time=%s",
 		req.StartDate, req.EndDate, req.StartTime, req.EndTime)
 
-	// Run the pipeline in a goroutine to avoid blocking the HTTP response
-	go func() {
-		// Create a new context with a timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
-		defer cancel()
+	// Create a new context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	defer cancel()
 
-		// Run the complete historical pipeline
-		err := runHMSPipelineHistorical(ctx, req)
-		if err != nil {
-			log.Printf("Historical HMS pipeline failed: %v", err)
-		} else {
-			log.Printf("Historical HMS pipeline completed successfully")
-		}
-	}()
+	// Run the complete historical pipeline synchronously
+	err := runHMSPipelineHistorical(ctx, req)
+	if err != nil {
+		log.Printf("Historical HMS pipeline failed: %v", err)
+		return respondWithError(c, http.StatusInternalServerError, fmt.Sprintf("Pipeline failed: %v", err))
+	}
 
-	// Return a success response immediately
-	return respondWithJSON(c, http.StatusAccepted, map[string]string{
-		"message":    "Historical HMS processing pipeline started",
-		"status":     "accepted",
+	log.Printf("Historical HMS pipeline completed successfully")
+
+	// Return a success response after completion
+	return respondWithJSON(c, http.StatusOK, map[string]string{
+		"message":    "Historical HMS processing pipeline completed successfully",
+		"status":     "completed",
 		"start_date": req.StartDate,
 		"end_date":   req.EndDate,
 	})
