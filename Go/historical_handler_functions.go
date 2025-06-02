@@ -26,7 +26,7 @@ func downloadMRMSForDate(date time.Time, outputDir string) error {
 	day := date.Format("02")
 	dateStr := date.Format("20060102")
 
-	baseURL := fmt.Sprintf("https://mtarchive.geol.iastate.edu/%s/%s/%s/mrms/ncep/MultiSensor_QPE_01H_Pass2/", year, month, day)
+	baseURL := fmt.Sprintf("%s%s/%s/%s/mrms/ncep/MultiSensor_QPE_01H_Pass2/", AppConfig.URLs.MRMSArchive, year, month, day)
 
 	log.Printf("Downloading MRMS data from: %s", baseURL)
 
@@ -153,7 +153,7 @@ func roundTimeUp(timeStr string) string {
 // updateHistoricalControlFile updates the control file with the specified dates and times
 func updateHistoricalControlFile(startDate, endDate time.Time, startTime, endTime string) error {
 	// Path to the control file
-	controlFilePath := "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.control"
+	controlFilePath := GetHMSControlFile("historical")
 
 	// Format dates for the control file (e.g., "9 May 2025")
 	startDateStr := startDate.Format("2 January 2006")
@@ -210,7 +210,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Step 0: Delete existing DSS files if they exist
 	// Delete RainHistorical.dss
-	existingDSSPath1 := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\RainHistorical.dss"
+	existingDSSPath1 := filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "RainHistorical.dss")
 	if _, err := os.Stat(existingDSSPath1); err == nil {
 		log.Printf("Deleting existing RainHistorical.dss file...")
 		if err := os.Remove(existingDSSPath1); err != nil {
@@ -222,7 +222,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	}
 
 	// Delete RainfallHistorical.dss
-	existingDSSPath2 := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\Rainfall\\RainfallHistorical.dss"
+	existingDSSPath2 := GetDSSPath("RainfallHistorical.dss")
 	if _, err := os.Stat(existingDSSPath2); err == nil {
 		log.Printf("Deleting existing RainfallHistorical.dss file...")
 		if err := os.Remove(existingDSSPath2); err != nil {
@@ -270,9 +270,15 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	}
 
 	// Create output directory
-	outputDir := filepath.Join("D:/FloodaceDocuments/HMS/HMSBackend/gribFiles", "historical", req.EndDate)
+	outputDir := filepath.Join(AppConfig.Paths.GribFilesDir, "historical", req.EndDate)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Convert to absolute path for batch script execution
+	absOutputDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
 	// Download files for each day
@@ -301,12 +307,12 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	log.Printf("STEP 2: Merging GRIB files...")
 
 	// For now, using a dummy output DSS file path as requested
-	outputDSS := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\hms_models\\LeonCreek\\Rainfall\\RainfallHistorical.dss"
+	outputDSS := GetDSSPath("RainfallHistorical.dss")
 
 	// Execute the merge GRIB files batch script
 	err = executeBatchFile(ctx,
-		"D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimePass2Batch.bat",
-		outputDir,
+		GetJythonBatchScriptPath("MergeGRIBFilesRealTimePass2Batch.bat"),
+		absOutputDir,
 		"", // Empty string for shapefile_path to use default
 		outputDSS,
 	)
@@ -330,31 +336,16 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	// Step 4: Run HMS historical computation
 	log.Printf("STEP 4: Running HMS historical computation...")
 
-	// Build the command
-	hmsExePath := "C:\\Program Files\\HEC\\HEC-HMS\\4.12\\HEC-HMS.cmd"
-	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\HMSScripts\\computeHistorical.script"
-	hmsDir := "C:\\Program Files\\HEC\\HEC-HMS\\4.12"
+	// Use batch script for HMS execution
+	batchPath := GetHMSBatchScriptPath("HMSHistoricalBatch.bat")
+	scriptPath := GetHMSScript("historical")
 
-	// Execute the HMS command from its directory
-	cmd := exec.CommandContext(ctx, hmsExePath, "-script", scriptPath)
-	cmd.Dir = hmsDir // Set working directory to HEC-HMS installation
-
-	// Run the command and capture output
-	output, err := cmd.CombinedOutput()
-
+	err = executeBatchFile(ctx, batchPath, scriptPath)
 	if err != nil {
-		// Check if it's an exit error to get the exit code
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode := exitErr.ExitCode()
-			log.Printf("HMS computation failed with exit code %d. Output: %s", exitCode, string(output))
-			return fmt.Errorf("HMS computation failed with exit code %d", exitCode)
-		}
-		log.Printf("HMS computation failed: %v. Output: %s", err, string(output))
-		return fmt.Errorf("failed to run HMS computation: %w", err)
+		return fmt.Errorf("failed at step 4 (HMS Historical Computation): %w", err)
 	}
 
 	log.Printf("STEP 4 COMPLETE: HMS historical computation completed successfully")
-	log.Printf("HMS output:\n%s", indentOutput(string(output)))
 
 	log.Printf("INFO: Historical HMS pipeline completed successfully")
 	return nil
@@ -404,8 +395,8 @@ func runExtractDSSDataJython(ctx context.Context) error {
 	log.Printf("INFO: Extracting DSS data for all junctions")
 
 	// Paths
-	jythonPath := "C:\\Program Files\\HEC\\HEC-DSSVue\\Jython.bat"
-	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\python_scripts\\Jython_Scripts\\extract_dss_data_historical.py"
+	jythonPath := GetJythonPath()
+	scriptPath := GetPythonScriptPath("Jython_Scripts/extract_dss_data_historical.py")
 
 	// Build command with no arguments (script extracts all junctions)
 	cmd := exec.CommandContext(ctx, jythonPath, scriptPath)
@@ -444,7 +435,7 @@ func handleExtractHistoricalDSSData(c echo.Context) error {
 	}
 
 	// Read the generated JSON file
-	jsonFilePath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\JSON\\outputHistorical.json"
+	jsonFilePath := GetJSONOutputPath("outputHistorical.json")
 	jsonData, err := os.ReadFile(jsonFilePath)
 	if err != nil {
 		log.Printf("Failed to read output JSON file: %v", err)

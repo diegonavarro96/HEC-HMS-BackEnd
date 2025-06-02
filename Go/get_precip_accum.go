@@ -108,7 +108,7 @@ func FetchLatestQPE(ctx context.Context) (string, error) {
 	defer gzReader.Close()
 
 	// Ensure gribFiles directory exists
-	gribFilesDir := "gribFiles"
+	gribFilesDir := AppConfig.Paths.GribFilesDir
 	if err := os.MkdirAll(gribFilesDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory %s: %w", gribFilesDir, err)
 	}
@@ -177,11 +177,11 @@ func runGRIBtoCOG(ctx context.Context) (*PrecipMeta, error) {
 	}
 	log.Printf("Using GRIB file for COG conversion: %s", latestGribFilePath)
 
-	// outDir: This will be relative to Go's working directory
-	const outDir = "../data/cogs_output"
+	// outDir: Use configured path
+	outDir := AppConfig.Paths.StaticCogDir
 
-	// Python script path: Relative to Go's working directory.
-	scriptRelativePath := filepath.Join("../python_scripts", "get_rainfall_accumulation", "grib_to_cog.py")
+	// Python script path: Use configured path
+	scriptRelativePath := GetPythonScriptPath(filepath.Join("get_rainfall_accumulation", "grib_to_cog.py"))
 
 	// --- Ensure output directory exists ---
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -190,7 +190,7 @@ func runGRIBtoCOG(ctx context.Context) (*PrecipMeta, error) {
 	}
 
 	tag := time.Now().UTC().Format("20060102_15Z")
-	const py = "C:\\Users\\diego\\anaconda3\\envs\\grib2cog\\python.exe" // Python interpreter
+	py := GetPythonPath("grib2cog") // Python interpreter
 
 	// Log the command and arguments for easier debugging
 	// Use latestGribFilePath as the inFile argument for the Python script

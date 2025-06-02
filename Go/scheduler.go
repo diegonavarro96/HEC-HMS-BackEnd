@@ -10,24 +10,23 @@ import (
 	"time"
 )
 
-const (
-	sourceFilePath      = `D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\RainrealTime.dss`
-	archiveDirectory    = `D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\dssArchive`
-)
+// Get source file path and archive directory from config
+func getSchedulerPaths() (string, string) {
+	return AppConfig.HMS.LeonCreekModel.RealTimeDSS, AppConfig.Paths.DSSArchiveDir
+}
 
-// Additional DSS files to delete (no archiving needed)
-var filesToDelete = []string{
-	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\HRR.dss`,
-	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTime.dss`,
-	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimeAndForcast.dss`,
-	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimePass1And2.dss`,
-	`D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek\Rainfall\RainfallRealTimePass2.dss`,
+// getFilesToDelete returns the DSS files to delete (no archiving needed)
+func getFilesToDelete() []string {
+	return AppConfig.HMS.LeonCreekModel.FilesToDelete
 }
 
 // archiveFileAndTriggerPipeline archives the specified file, deletes the original,
 // and then runs the HMS pipeline directly.
 func archiveFileAndTriggerPipeline() {
 	log.Println("Scheduler: Starting archive and pipeline trigger process...")
+
+	// Get paths from config
+	sourceFilePath, archiveDirectory := getSchedulerPaths()
 
 	// Ensure archive directory exists
 	if err := os.MkdirAll(archiveDirectory, 0755); err != nil {
@@ -102,7 +101,7 @@ func archiveFileAndTriggerPipeline() {
 
 	// 3. Delete additional DSS files (no archiving needed)
 	log.Println("Scheduler: Deleting additional DSS files...")
-	for _, filePath := range filesToDelete {
+	for _, filePath := range getFilesToDelete() {
 		if _, err := os.Stat(filePath); err == nil {
 			// File exists, attempt to delete it
 			deleteErr := os.Remove(filePath)
@@ -154,6 +153,7 @@ func StartScheduler() {
 			time.Sleep(sleepDuration)
 
 			// Check if source file exists before running
+			sourceFilePath, _ := getSchedulerPaths()
 			if _, err := os.Stat(sourceFilePath); os.IsNotExist(err) {
 				log.Printf("Scheduler: Source file %s does not exist. Skipping this run.\n", sourceFilePath)
 			} else {

@@ -1,0 +1,94 @@
+# HMS Backend Configuration
+# Copy this file to config.yaml and update the values for your environment
+
+server:
+  port: "8443"
+  tls_cert_path: "./server.crt"
+  tls_key_path: "./server.key"
+  environment: "development"  # development, staging, production
+  log_level: "info"          # debug, info, warn, error
+  rate_limit_burst: 20
+
+# Database configuration is handled via .env file
+# The .env file should contain:
+#   DB_HOST=localhost
+#   DB_PORT=5432
+#   DB_USER=your_db_user
+#   DB_PASSWORD=your_db_password
+#   DB_NAME=your_db_name
+
+paths:
+  # Directories - adjust these paths for your system
+  log_dir: "logs"
+  static_cog_dir: "../data/cogs_output"
+  test_tif_file: "cogs_output/reprojectv5.tif"
+  grib_files_dir: "gribFiles"
+  hms_models_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models"
+  python_scripts_dir: "../python_scripts"
+  json_output_dir: "../JSON"
+  csv_dir: "../CSV"
+  data_dir: "../data"
+  dss_archive_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/dssArchive"
+  grb_downloads_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads"
+  hms_scripts_dir: "../HMSScripts"
+
+urls:
+  # External service URLs
+  mrms_data_source: "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_24H/"
+  mrms_archive: "https://mtarchive.geol.iastate.edu/"
+  mrms_pass1: "https://mrms.ncep.noaa.gov/2D/MultiSensor_QPE_01H_Pass1/"
+  hrrr_data_source: "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/"
+  arcgis_token_endpoint: "https://www.arcgis.com/sharing/rest/oauth2/token"
+  arcgis_self_endpoint: "https://www.arcgis.com/sharing/rest/community/self?f=json"
+
+python:
+  # Python environment paths - adjust for your system
+  hms_env_path: "C:/Users/your_username/anaconda3/envs/HMS/python.exe"
+  grib2cog_env_path: "C:/Users/your_username/anaconda3/envs/grib2cog/python.exe"
+
+jython:
+  # Jython configuration - adjust for your HEC-DSSVue installation
+  executable_path: "C:/Program Files/HEC/HEC-DSSVue/jython.bat"
+  batch_scripts_dir: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts"
+
+hms:
+  # HEC-HMS configuration - adjust for your HMS installation
+  executable_path: "C:/Program Files/HEC/HEC-HMS/4.12/HEC-HMS.cmd"
+  version: "4.12"
+  realtime_control_file: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/RainRealTime.control"
+  historical_control_file: "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.control"
+  realtime_script: "computeRealTime.script"
+  historical_script: "computeHistorical.script"
+  
+  leon_creek_model:
+    rainfall_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall"
+    realtime_dss: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/RainrealTime.dss"
+    historical_dss: "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.dss"
+    files_to_delete:
+      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/HRR.dss"
+      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTime.dss"
+      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimeAndForcast.dss"
+      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimePass1And2.dss"
+      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimePass2.dss"
+
+cors:
+  # CORS configuration
+  allowed_origins:
+    - "https://localhost:8442"
+    - "https://floodaceserver.ai:8443"
+    - "https://floodaceserver.ai:8444"
+    - "https://localhost:3000"
+    - "https://floodaceserver.ai:8442"
+    - "https://diegon.tail779ff5.ts.net:8442"
+  allowed_ip_ranges:
+    - "http://192.168.1."
+    - "http://192.168."
+
+# Environment variable overrides:
+# You can override any configuration value using environment variables
+# Format: HMS_<SECTION>_<KEY>
+# Examples:
+#   HMS_SERVER_PORT=8080
+#   HMS_DATABASE_HOST=db.example.com
+#   HMS_PYTHON_HMS_ENV_PATH=/usr/local/bin/python3
+#   HMS_CORS_ALLOWED_ORIGINS_0=https://myapp.com

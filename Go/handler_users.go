@@ -89,7 +89,7 @@ func exchangeCodeForToken(code string) (*TokenResponse, error) {
 	form.Add("code", code)
 	form.Add("redirect_uri", os.Getenv("REDIRECT_URI"))
 
-	req, err := http.NewRequest("POST", "https://www.arcgis.com/sharing/rest/oauth2/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", AppConfig.URLs.ArcGISTokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func handleUserSession(c echo.Context) error {
 	token := cookie.Value
 	log.Println("Token found, verifying with ArcGIS")
 
-	req, err := http.NewRequest("GET", "https://www.arcgis.com/sharing/rest/community/self?f=json", nil)
+	req, err := http.NewRequest("GET", AppConfig.URLs.ArcGISSelfEndpoint, nil)
 	if err != nil {
 		log.Println("Error creating request:", err)
 		return c.JSON(http.StatusInternalServerError, UserResponse{Error: "Internal server error"})
@@ -175,7 +175,7 @@ func handleGetAllUsers(queries *sqlcdb.Queries) echo.HandlerFunc {
 		}
 
 		// Get user info from ArcGIS
-		req, err := http.NewRequest("GET", "https://www.arcgis.com/sharing/rest/community/self?f=json", nil)
+		req, err := http.NewRequest("GET", AppConfig.URLs.ArcGISSelfEndpoint, nil)
 		if err != nil {
 			return respondWithError(c, http.StatusInternalServerError, "Error creating request")
 		}
