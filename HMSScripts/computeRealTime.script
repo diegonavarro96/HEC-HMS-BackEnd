@@ -1,0 +1,14 @@
+# -- coding: utf-8 --
+from hms.model.JythonHms import * # boots the HMS data model
+
+OpenProject("Leon_46",r"D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek")  # <project-name>, <project-folder>
+print("Computing Run Rain Historical")
+ComputeRun("RainrealTime")                     # any Simulation Run that already works
+
+# SaveAllProjectComponents()
+# Cleanly shut down without printing a stack trace
+print("Successfully computed runs")
+try:
+    Exit(0)
+except SystemExit:
+    pass

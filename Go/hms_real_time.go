@@ -417,11 +417,11 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 	if len(dateStr) != 8 {
 		return fmt.Errorf("invalid date format: %s, expected YYYYMMDD", dateStr)
 	}
-	
+
 	if len(runHour) != 2 {
 		return fmt.Errorf("invalid run hour format: %s, expected HH", runHour)
 	}
-	
+
 	hour, err := strconv.Atoi(runHour)
 	if err != nil || hour < 0 || hour > 23 {
 		return fmt.Errorf("invalid run hour: %s, must be 00-23", runHour)
@@ -434,49 +434,49 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 	}
 
 	log.Printf("INFO: Downloading HRRR forecast files for date=%s, run_hour=%s", dateStr, runHour)
-	
+
 	// Base URL for HRRR data
 	baseURL := fmt.Sprintf("https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.%s/conus/", dateStr)
-	
+
 	// Download forecast hours 02 through 12
 	downloadedCount := 0
 	totalFiles := 11 // hours 02 through 12 inclusive
-	
+
 	for fh := 2; fh <= 12; fh++ {
 		// Format filename
 		filename := fmt.Sprintf("hrrr.t%sz.wrfsfcf%02d.grib2", runHour, fh)
 		fileURL := baseURL + filename
 		localPath := filepath.Join(outputDir, filename)
-		
+
 		// Check if file already exists
 		if _, err := os.Stat(localPath); err == nil {
 			log.Printf("File already exists, skipping: %s", localPath)
 			downloadedCount++
 			continue
 		}
-		
+
 		// Download file
 		log.Printf("Downloading HRRR forecast hour %02d: %s", fh, filename)
-		
+
 		resp, err := http.Get(fileURL)
 		if err != nil {
 			log.Printf("Warning: Error downloading %s: %v", filename, err)
 			continue // Skip to next file instead of breaking
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode == http.StatusNotFound {
 			log.Printf("Warning: File not found (404) for %s - this is normal if the forecast hasn't been generated yet", filename)
 			resp.Body.Close()
 			continue // Skip to next file, this is expected for recent forecasts
 		}
-		
+
 		if resp.StatusCode != http.StatusOK {
 			log.Printf("Warning: Failed to download %s: server returned status %d", filename, resp.StatusCode)
 			resp.Body.Close()
 			continue // Skip to next file instead of breaking
 		}
-		
+
 		// Create output file
 		outFile, err := os.Create(localPath)
 		if err != nil {
@@ -484,28 +484,28 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 			resp.Body.Close()
 			break
 		}
-		
+
 		// Copy data
 		_, err = io.Copy(outFile, resp.Body)
 		outFile.Close()
 		resp.Body.Close()
-		
+
 		if err != nil {
 			log.Printf("Failed to save file %s: %v", localPath, err)
 			os.Remove(localPath) // Clean up partial file
 			break
 		}
-		
+
 		log.Printf("Successfully downloaded: %s", filename)
 		downloadedCount++
 	}
-	
+
 	if downloadedCount == totalFiles {
 		log.Printf("INFO: All %d HRRR forecast files downloaded successfully for %s t%sz", downloadedCount, dateStr, runHour)
 	} else {
 		log.Printf("WARNING: Downloaded %d out of %d HRRR forecast files for %s t%sz", downloadedCount, totalFiles, dateStr, runHour)
 	}
-	
+
 	return nil
 }
 
@@ -595,18 +595,28 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		},
 		{
 			name:    "Combine DSS Records Pass1 Pass2",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/combineDssRecordsPass1Pass2.py",
-			isBatch: false,
+			path:    "C:/Program Files/HEC/HEC-DSSVue/Jython.bat",
+			isBatch: true,
 			argsFunc: func() []string {
-				return []string{}
+				return []string{
+					"D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/CombineTwoDssFiles.py",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTime.dss",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass2.dss",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass1And2.dss",
+				}
 			},
 		},
 		{
-			name:    "Combine DSS Records",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/combineDssRecords.py",
-			isBatch: false,
+			name:    "Combine DSS Records Realtime Pass1 Pass2 and HRR",
+			path:    "C:/Program Files/HEC/HEC-DSSVue/Jython.bat",
+			isBatch: true,
 			argsFunc: func() []string {
-				return []string{}
+				return []string{
+					"D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/CombineTwoDssFiles.py",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass1And2.dss",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\HRR.dss",
+					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimeAndForcast.dss",
+				}
 			},
 		},
 		{
@@ -617,14 +627,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 				return []string{}
 			},
 		},
-		{
-			name:    "Run HMS RealTime",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/runHMSRealTime.py",
-			isBatch: false,
-			argsFunc: func() []string {
-				return []string{"6"} // Running with option "6"
-			},
-		},
+		// Step removed - HMS execution will be done separately after the loop
 	}
 
 	for i, script := range scriptsToRun {
@@ -655,6 +658,36 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 			}
 		}
 	}
+
+	// Final step: Run HMS RealTime computation
+	finalStepNum := len(scriptsToRun) + 3
+	log.Printf("STEP %d: Running 'HMS RealTime Computation'...", finalStepNum)
+	
+	// Build the command
+	hmsExePath := "C:\\Program Files\\HEC\\HEC-HMS\\4.12\\HEC-HMS.cmd"
+	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\HMSScripts\\computeRealTime.script"
+	hmsDir := "C:\\Program Files\\HEC\\HEC-HMS\\4.12"
+
+	// Execute the HMS command from its directory
+	cmd := exec.CommandContext(ctx, hmsExePath, "-script", scriptPath)
+	cmd.Dir = hmsDir // Set working directory to HEC-HMS installation
+
+	// Run the command and capture output
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		// Check if it's an exit error to get the exit code
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode := exitErr.ExitCode()
+			log.Printf("HMS computation failed with exit code %d. Output: %s", exitCode, string(output))
+			return fmt.Errorf("HMS computation failed with exit code %d", exitCode)
+		}
+		log.Printf("HMS computation failed: %v. Output: %s", err, string(output))
+		return fmt.Errorf("failed to run HMS computation: %w", err)
+	}
+
+	log.Printf("STEP %d COMPLETE: HMS realtime computation completed successfully", finalStepNum)
+	log.Printf("HMS output:\n%s", indentOutput(string(output)))
 
 	log.Println("INFO: All processing steps triggered successfully!")
 	return nil
