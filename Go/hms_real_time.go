@@ -509,6 +509,66 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 	return nil
 }
 
+// updateControlFile updates the HMS control file with current date and time settings
+func updateControlFile() error {
+	controlFilePath := "D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\RainRealTime.control"
+	
+	log.Printf("setControlFile: Updating control file at: %s", controlFilePath)
+	
+	// Get the current time in UTC and round down to the hour
+	nowUTC := time.Now().UTC().Truncate(time.Hour)
+	log.Printf("setControlFile: Current UTC time (rounded down): %s", nowUTC.Format("2006-01-02 15:04:05"))
+	
+	// Calculate start datetime (47 hours before current UTC time)
+	startDateTime := nowUTC.Add(-47 * time.Hour)
+	startTimeStr := startDateTime.Format("15:04")
+	startDateStr := startDateTime.Format("2 January 2006") // Day without leading zero
+	
+	// Calculate end datetime (12 hours after current UTC time)
+	endDateTime := nowUTC.Add(12 * time.Hour)
+	endTimeStr := endDateTime.Format("15:04")
+	endDateStr := endDateTime.Format("2 January 2006") // Day without leading zero
+	
+	log.Printf("setControlFile: Calculated Start: %s %s (UTC-47h)", startDateStr, startTimeStr)
+	log.Printf("setControlFile: Calculated End:   %s %s (UTC+12h)", endDateStr, endTimeStr)
+	
+	// Read the control file
+	content, err := os.ReadFile(controlFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read control file: %w", err)
+	}
+	
+	// Process the file line by line
+	lines := strings.Split(string(content), "\n")
+	var updatedLines []string
+	
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmedLine, "Start Date:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     Start Date: %s", startDateStr))
+		case strings.HasPrefix(trimmedLine, "End Date:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     End Date: %s", endDateStr))
+		case strings.HasPrefix(trimmedLine, "Start Time:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     Start Time: %s", startTimeStr))
+		case strings.HasPrefix(trimmedLine, "End Time:"):
+			updatedLines = append(updatedLines, fmt.Sprintf("     End Time: %s", endTimeStr))
+		default:
+			updatedLines = append(updatedLines, line)
+		}
+	}
+	
+	// Write the updated content back to the file
+	updatedContent := strings.Join(updatedLines, "\n")
+	err = os.WriteFile(controlFilePath, []byte(updatedContent), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write control file: %w", err)
+	}
+	
+	log.Printf("setControlFile: Successfully updated control file")
+	return nil
+}
+
 // RunProcessingPipeline orchestrates a sequence of Python script executions.
 // It accepts an optional date in YYYYMMDD format and an optional run hour in HH format.
 func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, optionalRunHourHH string) error {
@@ -619,14 +679,6 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 				}
 			},
 		},
-		{
-			name:    "Set Control File",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/setControlFile.py", // Note: historical path
-			isBatch: false,
-			argsFunc: func() []string {
-				return []string{}
-			},
-		},
 		// Step removed - HMS execution will be done separately after the loop
 	}
 
@@ -659,8 +711,19 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 		}
 	}
 
+	// Step: Update Control File using Go function
+	controlFileStepNum := len(scriptsToRun) + 3
+	log.Printf("STEP %d: Running 'Set Control File'...", controlFileStepNum)
+	err = updateControlFile()
+	if err != nil {
+		return fmt.Errorf("failed at step %d (Set Control File): %w", controlFileStepNum, err)
+	}
+	log.Printf("STEP %d: 'Set Control File' completed successfully.", controlFileStepNum)
+	log.Printf("INFO: Waiting 300ms before next task...")
+	time.Sleep(1000 * time.Millisecond)
+
 	// Final step: Run HMS RealTime computation
-	finalStepNum := len(scriptsToRun) + 3
+	finalStepNum := controlFileStepNum + 1
 	log.Printf("STEP %d: Running 'HMS RealTime Computation'...", finalStepNum)
 	
 	// Build the command
