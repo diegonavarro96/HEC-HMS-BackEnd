@@ -40,3 +40,9 @@ python_scripts/RealTime/__pycache__
 python_scripts/RealTime/.jython_cache
 
 Go/.jython_cache
+
+python_scripts/Jython_Scripts/batchScripts/.jython_cache/packages
+
+# Ignore all .jython_cache directories
+**/.jython_cache/
+.jython_cache/

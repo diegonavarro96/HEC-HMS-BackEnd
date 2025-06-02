@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,15 +45,15 @@ func initLogger() (*zap.Logger, error) {
 	config := zap.Config{
 		Development:      false,
 		Level:            zap.NewAtomicLevelAt(zap.InfoLevel),
-		OutputPaths:      []string{"stdout", "logs/server.log"},
+		OutputPaths:      []string{"stdout", filepath.Join(AppConfig.Paths.LogDir, "server.log")},
 		ErrorOutputPaths: []string{"stderr"},
 		Encoding:         "console", // Use console encoding for better readability
 		EncoderConfig:    encoderConfig,
 	}
 
 	// Create logs directory if it doesn't exist
-	if _, err := os.Stat("logs"); os.IsNotExist(err) {
-		os.Mkdir("logs", 0755)
+	if _, err := os.Stat(AppConfig.Paths.LogDir); os.IsNotExist(err) {
+		os.MkdirAll(AppConfig.Paths.LogDir, 0755)
 	}
 
 	return config.Build(zap.AddCaller())
@@ -119,6 +120,11 @@ func main() {
 	flag.StringVar(&mrmsDataSourceURL, "url", "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_24H/", "URL for the MRMS QPE data source. Used by the /api/precip/latest endpoint.")
 	flag.Parse()
 
+	// Load configuration
+	if err := LoadConfig(""); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
 	// Initialize logger
 	logger, err := initLogger()
 	if err != nil {
@@ -127,6 +133,11 @@ func main() {
 	defer logger.Sync()
 
 	sugar := logger.Sugar()
+
+	// Update mrmsDataSourceURL if not provided via flag
+	if mrmsDataSourceURL == AppConfig.URLs.MRMSDataSource {
+		mrmsDataSourceURL = AppConfig.URLs.MRMSDataSource
+	}
 
 	// Log the MRMS data source URL being used
 	sugar.Infow("MRMS Data Source Configuration",
@@ -141,10 +152,15 @@ func main() {
 		)
 	}
 
-	port := os.Getenv("SERVER_PORT")
+	// Use config for port, fallback to env var if set
+	port := AppConfig.Server.Port
+	if envPort := os.Getenv("SERVER_PORT"); envPort != "" {
+		port = envPort
+	}
+
 	sugar.Infow("🚀 Server configuration loaded",
 		"port", "\x1b[36m"+port+"\x1b[0m",
-		"environment", "\x1b[35m"+os.Getenv("ENV")+"\x1b[0m",
+		"environment", "\x1b[35m"+AppConfig.Server.Environment+"\x1b[0m",
 	)
 
 	e := echo.New()
@@ -153,27 +169,23 @@ func main() {
 	e.Use(CustomRequestLogger(sugar))
 	e.Use(middleware.Recover())
 	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(
-		rate.Limit(20),
+		rate.Limit(AppConfig.Server.RateLimitBurst),
 	)))
 
 	// CORS configuration
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOriginFunc: func(origin string) (bool, error) {
-			allowedOrigins := map[string]bool{
-				"https://localhost:8442":                true,
-				"https://floodaceserver.ai:8443":        true,
-				"https://floodaceserver.ai:8444":        true,
-				"https://localhost:3000":                true,
-				"https://floodaceserver.ai:8442":        true,
-				"https://diegon.tail779ff5.ts.net:8442": true,
+			allowedOrigins := make(map[string]bool)
+			for _, origin := range AppConfig.CORS.AllowedOrigins {
+				allowedOrigins[origin] = true
 			}
 
 			if allowedOrigins[origin] {
 				return true, nil
 			}
 
-			// Define the two allowed IP ranges
-			ranges := []string{"http://192.168.1.", "http://192.168."}
+			// Use configured IP ranges
+			ranges := AppConfig.CORS.AllowedIPRanges
 			for _, allowedOriginPrefix := range ranges {
 				if strings.HasPrefix(origin, allowedOriginPrefix) {
 					ipPart := strings.TrimPrefix(origin, allowedOriginPrefix)
@@ -200,14 +212,11 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	staticCogDir := "../data/cogs_output" // Define it once
-	log.Printf("Serving static COG files from local directory: %s under URL prefix /cogs", staticCogDir)
-	e.Static("/cogs", staticCogDir)
+	log.Printf("Serving static COG files from local directory: %s under URL prefix /cogs", AppConfig.Paths.StaticCogDir)
+	e.Static("/cogs", AppConfig.Paths.StaticCogDir)
 	// Serve the specific test TIF file at /cogs_test
-	// The file path is relative to the application's root directory.
-	testTifFilePath := "cogs_output/reprojectv5.tif"
-	log.Printf("Serving static file %s at URL prefix /cogs_test", testTifFilePath)
-	e.File("/cogs_test", testTifFilePath)
+	log.Printf("Serving static file %s at URL prefix /cogs_test", AppConfig.Paths.TestTifFile)
+	e.File("/cogs_test", AppConfig.Paths.TestTifFile)
 
 	// Database connection
 	dbConn, err := dbConnection()
@@ -236,9 +245,6 @@ func main() {
 	// HMS processing pipeline endpoint
 	e.POST("/api/run-hms-pipeline", handleRunHMSPipeline)
 
-	// Junction flow data endpoint
-	e.POST("/api/get-junction-flow", handleGetJunctionFlow)
-
 	e.GET("/api/get-all-junction-flows", handleGetAllJunctionFlows)
 
 	e.GET("/api/precip/latest", handelGetLatestPrecip)
@@ -256,7 +262,7 @@ func main() {
 	StartScheduler() // This will run the archive and pipeline trigger task at HH:15
 
 	// Start server with TLS
-	if err := e.StartTLS(":"+port, "./server.crt", "./server.key"); err != nil {
+	if err := e.StartTLS(":"+port, AppConfig.Server.TLSCertPath, AppConfig.Server.TLSKeyPath); err != nil {
 		sugar.Fatalw("💥 Server failed to start",
 			"error", "\x1b[31m"+err.Error()+"\x1b[0m",
 		)

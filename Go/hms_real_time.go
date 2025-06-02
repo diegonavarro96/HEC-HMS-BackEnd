@@ -18,8 +18,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const pythonExePath = `C:\Users\diego\anaconda3\envs\HMS\python.exe`
-const jythonExePath = `C:\Program Files\HEC\HEC-DSSVue\jython.bat`
+// pythonExePath and jythonExePath are now retrieved from config
+// Use GetPythonPath("hms") and GetJythonPath() instead
 
 // executePythonScript is a helper function to execute a Python script
 func executePythonScript(ctx context.Context, scriptPath string, scriptArgs ...string) error {
@@ -29,9 +29,9 @@ func executePythonScript(ctx context.Context, scriptPath string, scriptArgs ...s
 	}
 
 	cmdArgs := append([]string{absScriptPath}, scriptArgs...)
-	cmd := exec.CommandContext(ctx, pythonExePath, cmdArgs...)
+	cmd := exec.CommandContext(ctx, GetPythonPath("hms"), cmdArgs...)
 
-	log.Printf("INFO: Executing command: %s %s", pythonExePath, strings.Join(cmdArgs, " "))
+	log.Printf("INFO: Executing command: %s %s", GetPythonPath("hms"), strings.Join(cmdArgs, " "))
 
 	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
 
@@ -56,9 +56,9 @@ func executeJythonScript(ctx context.Context, scriptPath string) error {
 		return fmt.Errorf("failed to get absolute path for script %s: %w", scriptPath, err)
 	}
 
-	cmd := exec.CommandContext(ctx, jythonExePath, absScriptPath)
+	cmd := exec.CommandContext(ctx, GetJythonPath(), absScriptPath)
 
-	log.Printf("INFO: Executing command: %s %s", jythonExePath, absScriptPath)
+	log.Printf("INFO: Executing command: %s %s", GetJythonPath(), absScriptPath)
 
 	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
 
@@ -85,6 +85,10 @@ func executeBatchFile(ctx context.Context, batchPath string, batchArgs ...string
 
 	cmdArgs := append([]string{"/c", absBatchPath}, batchArgs...)
 	cmd := exec.CommandContext(ctx, "cmd.exe", cmdArgs...)
+
+	// Set working directory to the directory containing the batch file
+	// This ensures relative paths in the batch file work correctly
+	cmd.Dir = filepath.Dir(absBatchPath)
 
 	log.Printf("INFO: Executing batch file: cmd.exe %s", strings.Join(cmdArgs, " "))
 
@@ -387,9 +391,9 @@ func downloadGRIBFiles(dateStr string, includeYesterday bool) error {
 
 	// Configure download parameters
 	config := GRIBDownloadConfig{
-		BaseURLRealtime: "https://mrms.ncep.noaa.gov/2D/MultiSensor_QPE_01H_Pass1/",
-		BaseURLArchive:  "https://mtarchive.geol.iastate.edu/",
-		OutputDir:       fmt.Sprintf("D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads/%s", dateStr),
+		BaseURLRealtime: AppConfig.URLs.MRMSPass1,
+		BaseURLArchive:  AppConfig.URLs.MRMSArchive,
+		OutputDir:       GetGribDownloadPath(dateStr),
 		HoursBack:       24, // Real-time: last 24 hours
 		DaysBack:        2,  // Archive: need to check 2 days back to ensure we cover 24-48 hours ago
 	}
@@ -428,7 +432,7 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 	}
 
 	// Create output directory
-	outputDir := fmt.Sprintf("D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads/%s", dateStr)
+	outputDir := GetGribDownloadPath(dateStr)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -436,7 +440,7 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 	log.Printf("INFO: Downloading HRRR forecast files for date=%s, run_hour=%s", dateStr, runHour)
 
 	// Base URL for HRRR data
-	baseURL := fmt.Sprintf("https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.%s/conus/", dateStr)
+	baseURL := fmt.Sprintf("%shrrr.%s/conus/", AppConfig.URLs.HRRRDataSource, dateStr)
 
 	// Download forecast hours 02 through 12
 	downloadedCount := 0
@@ -511,37 +515,37 @@ func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
 
 // updateControlFile updates the HMS control file with current date and time settings
 func updateControlFile() error {
-	controlFilePath := "D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\RainRealTime.control"
-	
+	controlFilePath := GetHMSControlFile("realtime")
+
 	log.Printf("setControlFile: Updating control file at: %s", controlFilePath)
-	
+
 	// Get the current time in UTC and round down to the hour
 	nowUTC := time.Now().UTC().Truncate(time.Hour)
 	log.Printf("setControlFile: Current UTC time (rounded down): %s", nowUTC.Format("2006-01-02 15:04:05"))
-	
+
 	// Calculate start datetime (47 hours before current UTC time)
 	startDateTime := nowUTC.Add(-47 * time.Hour)
 	startTimeStr := startDateTime.Format("15:04")
 	startDateStr := startDateTime.Format("2 January 2006") // Day without leading zero
-	
+
 	// Calculate end datetime (12 hours after current UTC time)
 	endDateTime := nowUTC.Add(12 * time.Hour)
 	endTimeStr := endDateTime.Format("15:04")
 	endDateStr := endDateTime.Format("2 January 2006") // Day without leading zero
-	
+
 	log.Printf("setControlFile: Calculated Start: %s %s (UTC-47h)", startDateStr, startTimeStr)
 	log.Printf("setControlFile: Calculated End:   %s %s (UTC+12h)", endDateStr, endTimeStr)
-	
+
 	// Read the control file
 	content, err := os.ReadFile(controlFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read control file: %w", err)
 	}
-	
+
 	// Process the file line by line
 	lines := strings.Split(string(content), "\n")
 	var updatedLines []string
-	
+
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		switch {
@@ -557,14 +561,14 @@ func updateControlFile() error {
 			updatedLines = append(updatedLines, line)
 		}
 	}
-	
+
 	// Write the updated content back to the file
 	updatedContent := strings.Join(updatedLines, "\n")
 	err = os.WriteFile(controlFilePath, []byte(updatedContent), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write control file: %w", err)
 	}
-	
+
 	log.Printf("setControlFile: Successfully updated control file")
 	return nil
 }
@@ -624,58 +628,56 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	}{
 		{
 			name:    "Merge GRIB Files RealTime",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimeBatch.bat",
+			path:    GetJythonBatchScriptPath("MergeGRIBFilesRealTimeBatch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
 				// Pass the full folder path to the batch file
-				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
+				return []string{GetGribDownloadPath(dateToUse)}
 			},
 		},
 		{
 			name:    "Merge GRIB Files RealTime Pass 2",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimePass2Batch.bat",
+			path:    GetJythonBatchScriptPath("MergeGRIBFilesRealTimePass2Batch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
 				// Pass the arguments as separate elements
 				return []string{
-					fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse),
+					GetGribDownloadPath(dateToUse),
 					"", // Empty string for shapefile_path to use default
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass2.dss",
+					GetDSSPath("RainfallRealTimePass2.dss"),
 				}
 			},
 		},
 		{
 			name:    "Merge GRIB Files Forcast",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimeHRRBatch.bat",
+			path:    GetJythonBatchScriptPath("MergeGRIBFilesRealTimeHRRBatch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
 				// Pass the full folder path to the batch file
-				return []string{fmt.Sprintf("D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\grb_downloads\\%s", dateToUse)}
+				return []string{GetGribDownloadPath(dateToUse)}
 			},
 		},
 		{
 			name:    "Combine DSS Records Pass1 Pass2",
-			path:    "C:/Program Files/HEC/HEC-DSSVue/Jython.bat",
+			path:    GetJythonBatchScriptPath("CombineTwoDssFilesPass1Pass2Batch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
 				return []string{
-					"D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/CombineTwoDssFiles.py",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTime.dss",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass2.dss",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass1And2.dss",
+					GetDSSPath("RainfallRealTime.dss"),
+					GetDSSPath("RainfallRealTimePass2.dss"),
+					GetDSSPath("RainfallRealTimePass1And2.dss"),
 				}
 			},
 		},
 		{
 			name:    "Combine DSS Records Realtime Pass1 Pass2 and HRR",
-			path:    "C:/Program Files/HEC/HEC-DSSVue/Jython.bat",
+			path:    GetJythonBatchScriptPath("CombineTwoDssFilesRealTimeAndHRRBatch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
 				return []string{
-					"D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/CombineTwoDssFiles.py",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimePass1And2.dss",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\HRR.dss",
-					"D:\\FloodaceDocuments\\HMS\\HMSGit\\HEC-HMS-Floodace\\hms_models\\LeonCreek\\Rainfall\\RainfallRealTimeAndForcast.dss",
+					GetDSSPath("RainfallRealTimePass1And2.dss"),
+					GetDSSPath("HRR.dss"),
+					GetDSSPath("RainfallRealTimeAndForcast.dss"),
 				}
 			},
 		},
@@ -725,32 +727,17 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// Final step: Run HMS RealTime computation
 	finalStepNum := controlFileStepNum + 1
 	log.Printf("STEP %d: Running 'HMS RealTime Computation'...", finalStepNum)
+
+	// Use batch script for HMS execution
+	batchPath := GetHMSBatchScriptPath("HMSRealTimeBatch.bat")
+	scriptPath := GetHMSScript("realtime")
 	
-	// Build the command
-	hmsExePath := "C:\\Program Files\\HEC\\HEC-HMS\\4.12\\HEC-HMS.cmd"
-	scriptPath := "D:\\FloodaceDocuments\\HMS\\HMSBackend\\HMSScripts\\computeRealTime.script"
-	hmsDir := "C:\\Program Files\\HEC\\HEC-HMS\\4.12"
-
-	// Execute the HMS command from its directory
-	cmd := exec.CommandContext(ctx, hmsExePath, "-script", scriptPath)
-	cmd.Dir = hmsDir // Set working directory to HEC-HMS installation
-
-	// Run the command and capture output
-	output, err := cmd.CombinedOutput()
-
+	err = executeBatchFile(ctx, batchPath, scriptPath)
 	if err != nil {
-		// Check if it's an exit error to get the exit code
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode := exitErr.ExitCode()
-			log.Printf("HMS computation failed with exit code %d. Output: %s", exitCode, string(output))
-			return fmt.Errorf("HMS computation failed with exit code %d", exitCode)
-		}
-		log.Printf("HMS computation failed: %v. Output: %s", err, string(output))
-		return fmt.Errorf("failed to run HMS computation: %w", err)
+		return fmt.Errorf("failed at step %d (HMS RealTime Computation): %w", finalStepNum, err)
 	}
-
-	log.Printf("STEP %d COMPLETE: HMS realtime computation completed successfully", finalStepNum)
-	log.Printf("HMS output:\n%s", indentOutput(string(output)))
+	
+	log.Printf("STEP %d: 'HMS RealTime Computation' completed successfully.", finalStepNum)
 
 	log.Println("INFO: All processing steps triggered successfully!")
 	return nil
