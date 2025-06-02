@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -410,6 +411,104 @@ func downloadGRIBFiles(dateStr string, includeYesterday bool) error {
 	return nil
 }
 
+// downloadHRRRForecastGRIB downloads HRRR forecast GRIB files for a specific date and run hour
+func downloadHRRRForecastGRIB(dateStr string, runHour string) error {
+	// Validate inputs
+	if len(dateStr) != 8 {
+		return fmt.Errorf("invalid date format: %s, expected YYYYMMDD", dateStr)
+	}
+	
+	if len(runHour) != 2 {
+		return fmt.Errorf("invalid run hour format: %s, expected HH", runHour)
+	}
+	
+	hour, err := strconv.Atoi(runHour)
+	if err != nil || hour < 0 || hour > 23 {
+		return fmt.Errorf("invalid run hour: %s, must be 00-23", runHour)
+	}
+
+	// Create output directory
+	outputDir := fmt.Sprintf("D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads/%s", dateStr)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	log.Printf("INFO: Downloading HRRR forecast files for date=%s, run_hour=%s", dateStr, runHour)
+	
+	// Base URL for HRRR data
+	baseURL := fmt.Sprintf("https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.%s/conus/", dateStr)
+	
+	// Download forecast hours 02 through 12
+	downloadedCount := 0
+	totalFiles := 11 // hours 02 through 12 inclusive
+	
+	for fh := 2; fh <= 12; fh++ {
+		// Format filename
+		filename := fmt.Sprintf("hrrr.t%sz.wrfsfcf%02d.grib2", runHour, fh)
+		fileURL := baseURL + filename
+		localPath := filepath.Join(outputDir, filename)
+		
+		// Check if file already exists
+		if _, err := os.Stat(localPath); err == nil {
+			log.Printf("File already exists, skipping: %s", localPath)
+			downloadedCount++
+			continue
+		}
+		
+		// Download file
+		log.Printf("Downloading HRRR forecast hour %02d: %s", fh, filename)
+		
+		resp, err := http.Get(fileURL)
+		if err != nil {
+			log.Printf("Warning: Error downloading %s: %v", filename, err)
+			continue // Skip to next file instead of breaking
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode == http.StatusNotFound {
+			log.Printf("Warning: File not found (404) for %s - this is normal if the forecast hasn't been generated yet", filename)
+			resp.Body.Close()
+			continue // Skip to next file, this is expected for recent forecasts
+		}
+		
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Warning: Failed to download %s: server returned status %d", filename, resp.StatusCode)
+			resp.Body.Close()
+			continue // Skip to next file instead of breaking
+		}
+		
+		// Create output file
+		outFile, err := os.Create(localPath)
+		if err != nil {
+			log.Printf("Failed to create file %s: %v", localPath, err)
+			resp.Body.Close()
+			break
+		}
+		
+		// Copy data
+		_, err = io.Copy(outFile, resp.Body)
+		outFile.Close()
+		resp.Body.Close()
+		
+		if err != nil {
+			log.Printf("Failed to save file %s: %v", localPath, err)
+			os.Remove(localPath) // Clean up partial file
+			break
+		}
+		
+		log.Printf("Successfully downloaded: %s", filename)
+		downloadedCount++
+	}
+	
+	if downloadedCount == totalFiles {
+		log.Printf("INFO: All %d HRRR forecast files downloaded successfully for %s t%sz", downloadedCount, dateStr, runHour)
+	} else {
+		log.Printf("WARNING: Downloaded %d out of %d HRRR forecast files for %s t%sz", downloadedCount, totalFiles, dateStr, runHour)
+	}
+	
+	return nil
+}
+
 // RunProcessingPipeline orchestrates a sequence of Python script executions.
 // It accepts an optional date in YYYYMMDD format and an optional run hour in HH format.
 func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, optionalRunHourHH string) error {
@@ -446,21 +545,23 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	log.Printf("INFO: Waiting 300ms before next task...")
 	time.Sleep(1000 * time.Millisecond)
 
-	// Script execution steps (starting from step 2)
+	// Step 2: Download HRRR forecast GRIB files using Go function
+	log.Printf("STEP 2: Running 'Get HRRR Forecast GRIB'...")
+	err = downloadHRRRForecastGRIB(dateToUse, runHourToUse)
+	if err != nil {
+		return fmt.Errorf("failed at step 2 (Get HRRR Forecast GRIB): %w", err)
+	}
+	log.Printf("STEP 2: 'Get HRRR Forecast GRIB' completed successfully.")
+	log.Printf("INFO: Waiting 300ms before next task...")
+	time.Sleep(1000 * time.Millisecond)
+
+	// Script execution steps (starting from step 3)
 	scriptsToRun := []struct {
 		name     string
 		path     string
 		isBatch  bool
 		argsFunc func() []string // Function to generate args, allows use of dateToUse/runHourToUse
 	}{
-		{
-			name:    "Get HRRR Forecast GRIB",
-			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/RealTime/getHRRRForecastGrb.py",
-			isBatch: false,
-			argsFunc: func() []string {
-				return []string{dateToUse, runHourToUse}
-			},
-		},
 		{
 			name:    "Merge GRIB Files RealTime",
 			path:    "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts/MergeGRIBFilesRealTimeBatch.bat",
@@ -527,7 +628,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	}
 
 	for i, script := range scriptsToRun {
-		stepNum := i + 2 // Starting from step 2 since step 1 is now handled by Go
+		stepNum := i + 3 // Starting from step 3 since steps 1 and 2 are now handled by Go
 		log.Printf("STEP %d: Running script '%s'...", stepNum, script.name)
 
 		// Execute either batch file or Python script based on the isBatch flag
