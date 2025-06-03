@@ -739,6 +739,12 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 
 	log.Printf("STEP %d: 'HMS RealTime Computation' completed successfully.", finalStepNum)
 
+	err = ProcessAllJunctionFlows()
+
+	if err != nil {
+		return fmt.Errorf("failed at step %d (Json File Update All Junction FLows): %w", finalStepNum+1, err)
+	}
+
 	log.Println("INFO: All processing steps triggered successfully!")
 	return nil
 }
