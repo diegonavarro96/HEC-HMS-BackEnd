@@ -64,6 +64,9 @@ func GetHMSScript(runType string) string {
 func GetDSSPath(filename string) string {
 	return filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "Rainfall", filename)
 }
+func GetHistoricalDSSPath(filename string) string {
+	return filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "Rainfall", filename)
+}
 
 // GetGribDownloadPath returns the full path for GRIB downloads
 func GetGribDownloadPath(filename string) string {

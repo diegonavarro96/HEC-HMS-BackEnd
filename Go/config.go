@@ -39,18 +39,19 @@ type DatabaseConfig struct {
 }
 
 type PathsConfig struct {
-	LogDir           string `mapstructure:"log_dir"`
-	StaticCogDir     string `mapstructure:"static_cog_dir"`
-	TestTifFile      string `mapstructure:"test_tif_file"`
-	GribFilesDir     string `mapstructure:"grib_files_dir"`
-	HMSModelsDir     string `mapstructure:"hms_models_dir"`
-	PythonScriptsDir string `mapstructure:"python_scripts_dir"`
-	JSONOutputDir    string `mapstructure:"json_output_dir"`
-	CSVDir           string `mapstructure:"csv_dir"`
-	DataDir          string `mapstructure:"data_dir"`
-	DSSArchiveDir    string `mapstructure:"dss_archive_dir"`
-	GrbDownloadsDir  string `mapstructure:"grb_downloads_dir"`
-	HMSScriptsDir    string `mapstructure:"hms_scripts_dir"`
+	LogDir                 string `mapstructure:"log_dir"`
+	StaticCogDir           string `mapstructure:"static_cog_dir"`
+	TestTifFile            string `mapstructure:"test_tif_file"`
+	GribFilesDir           string `mapstructure:"grib_files_dir"`
+	HMSModelsDir           string `mapstructure:"hms_models_dir"`
+	HMSHistoricalModelsDir string `mapstructure:"hms_historical_models_dir"`
+	PythonScriptsDir       string `mapstructure:"python_scripts_dir"`
+	JSONOutputDir          string `mapstructure:"json_output_dir"`
+	CSVDir                 string `mapstructure:"csv_dir"`
+	DataDir                string `mapstructure:"data_dir"`
+	DSSArchiveDir          string `mapstructure:"dss_archive_dir"`
+	GrbDownloadsDir        string `mapstructure:"grb_downloads_dir"`
+	HMSScriptsDir          string `mapstructure:"hms_scripts_dir"`
 }
 
 type URLsConfig struct {

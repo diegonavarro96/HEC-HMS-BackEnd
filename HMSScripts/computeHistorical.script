@@ -1,14 +1,13 @@
-# -- coding: utf-8 --
-from hms.model.JythonHms import * # boots the HMS data model
+import os, sys
+from hms.model.JythonHms import *
 
-OpenProject("Leon_46",r"D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek")  # <project-name>, <project-folder>
-print("Computing Run Rain Historical")
-ComputeRun("RainHistorical")                     # any Simulation Run that already works
+hms_models_directory = os.getenv("HMS_HISTORICAL_MODELS_DIR")
 
-# SaveAllProjectComponents()
-# Cleanly shut down without printing a stack trace
-print("Successfully computed runs")
-try:
-    Exit(0)
-except SystemExit:
-    pass
+if not hms_models_directory:
+    print("ERROR: HMS models directory not provided")
+    sys.exit(1)
+
+project_path = os.path.join(hms_models_directory, 'LeonCreek')
+OpenProject("Leon_46", project_path)
+ComputeRun("RainHistorical")
+Exit(0)

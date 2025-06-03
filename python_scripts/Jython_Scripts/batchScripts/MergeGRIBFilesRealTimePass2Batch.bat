@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 rem ===== CONFIGURACIÓN BÁSICA ====================================
-set "VORTEX_HOME=C:\Program Files\HEC\vortex-0.11.25"
+set "VORTEX_HOME=C:\Program Files\HEC\HEC-HMS\4.12"
 set "JYTHON_HOME=C:\Jython2.7.4"
 set "JYTHON_SCRIPT=D:\FloodaceDocuments\HMS\HMSBackend\python_scripts\Jython_Scripts\MergeGRIBFilesRealTimePass2Jython.py"
 set "HEAP_GB=32"          rem ← ajusta el -Xmx a tus necesidades
