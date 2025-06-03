@@ -67,11 +67,11 @@ func archiveFileAndTriggerPipeline() {
 		os.Remove(archiveFilePath)
 		return
 	}
-	
+
 	// Close both files before attempting deletion
 	srcFile.Close()
 	dstFile.Close()
-	
+
 	log.Printf("Scheduler: File successfully archived to %s\n", archiveFilePath)
 
 	// 2. Delete the original file with retry mechanism for Windows
@@ -82,17 +82,17 @@ func archiveFileAndTriggerPipeline() {
 			log.Printf("Scheduler: Original file %s deleted successfully\n", sourceFilePath)
 			break
 		}
-		
+
 		// If it's a "file in use" error, wait a bit and retry
 		if os.IsPermission(deleteErr) || os.IsNotExist(deleteErr) {
 			// File doesn't exist or permanent permission issue, no point retrying
 			break
 		}
-		
+
 		log.Printf("Scheduler: Attempt %d to delete file failed: %v. Retrying...\n", attempts+1, deleteErr)
 		time.Sleep(100 * time.Millisecond) // Wait 100ms before retry
 	}
-	
+
 	if deleteErr != nil {
 		log.Printf("Scheduler: Error deleting original file %s after retries: %v\n", sourceFilePath, deleteErr)
 		// Log error but proceed to call API, as archiving was successful.
@@ -119,17 +119,17 @@ func archiveFileAndTriggerPipeline() {
 
 	// 4. Trigger the HMS pipeline directly
 	log.Println("Scheduler: Running HMS pipeline...")
-	
+
 	// Create a context for the pipeline execution
 	ctx := context.Background()
-	
+
 	// Run the pipeline with default parameters (empty strings will use defaults)
 	if err := RunProcessingPipeline(ctx, "", ""); err != nil {
 		log.Printf("Scheduler: Error running HMS pipeline: %v\n", err)
 	} else {
 		log.Println("Scheduler: HMS pipeline completed successfully")
 	}
-	
+
 	log.Println("Scheduler: Archive and pipeline trigger process finished.")
 }
 

@@ -210,7 +210,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Step 0: Delete existing DSS files if they exist
 	// Delete RainHistorical.dss
-	existingDSSPath1 := filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "RainHistorical.dss")
+	existingDSSPath1 := filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "RainHistorical.dss")
 	if _, err := os.Stat(existingDSSPath1); err == nil {
 		log.Printf("Deleting existing RainHistorical.dss file...")
 		if err := os.Remove(existingDSSPath1); err != nil {
@@ -222,7 +222,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	}
 
 	// Delete RainfallHistorical.dss
-	existingDSSPath2 := GetDSSPath("RainfallHistorical.dss")
+	existingDSSPath2 := GetHistoricalDSSPath("RainfallHistorical.dss")
 	if _, err := os.Stat(existingDSSPath2); err == nil {
 		log.Printf("Deleting existing RainfallHistorical.dss file...")
 		if err := os.Remove(existingDSSPath2); err != nil {
@@ -307,7 +307,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	log.Printf("STEP 2: Merging GRIB files...")
 
 	// For now, using a dummy output DSS file path as requested
-	outputDSS := GetDSSPath("RainfallHistorical.dss")
+	outputDSS := GetHistoricalDSSPath("RainfallHistorical.dss")
 
 	// Execute the merge GRIB files batch script
 	err = executeBatchFile(ctx,
@@ -339,8 +339,9 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	// Use batch script for HMS execution
 	batchPath := GetHMSBatchScriptPath("HMSHistoricalBatch.bat")
 	scriptPath := GetHMSScript("historical")
+	hmsModelsDir := AppConfig.Paths.HMSHistoricalModelsDir
 
-	err = executeBatchFile(ctx, batchPath, scriptPath)
+	err = executeBatchFile(ctx, batchPath, scriptPath, hmsModelsDir)
 	if err != nil {
 		return fmt.Errorf("failed at step 4 (HMS Historical Computation): %w", err)
 	}

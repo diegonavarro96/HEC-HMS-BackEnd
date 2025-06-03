@@ -1,14 +1,17 @@
-# -- coding: utf-8 --
-from hms.model.JythonHms import * # boots the HMS data model
+import os, sys
+from hms.model.JythonHms import *
 
-OpenProject("Leon_46",r"D:\FloodaceDocuments\HMS\HMSGit\HEC-HMS-Floodace\hms_models\LeonCreek")  # <project-name>, <project-folder>
-print("Computing Run Rain Historical")
+hms_models_directory = os.getenv("HMS_MODELS_DIR")
+
+if not hms_models_directory:
+    print("ERROR: HMS models directory not provided")
+    sys.exit(1)
+
+project_path = os.path.join(hms_models_directory, 'LeonCreek')
+OpenProject("Leon_46", project_path)
 ComputeRun("RainrealTime")                     # any Simulation Run that already works
+Exit(0)
 
-# SaveAllProjectComponents()
-# Cleanly shut down without printing a stack trace
-print("Successfully computed runs")
-try:
-    Exit(0)
-except SystemExit:
-    pass
+
+
+

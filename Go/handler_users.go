@@ -1,9 +1,12 @@
 package main
 
 import (
+	"HMSBackend/sqlcdb"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/joho/godotenv"
+	"github.com/labstack/echo/v4"
 	"io"
 	"log"
 	"net/http"
@@ -11,10 +14,8 @@ import (
 	"os"
 	"strings"
 	"time"
-	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
-	"HMSBackend/sqlcdb"
 )
+
 func validateUser(queries *sqlcdb.Queries, validateUsername string) bool {
 
 	users, err := queries.GetUsers(context.Background())
@@ -31,7 +32,6 @@ func validateUser(queries *sqlcdb.Queries, validateUsername string) bool {
 	return false
 
 }
-
 
 func handleValidateUser(queries *sqlcdb.Queries) echo.HandlerFunc {
 	return func(c echo.Context) error {

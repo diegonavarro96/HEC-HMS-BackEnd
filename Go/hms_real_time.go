@@ -731,13 +731,20 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	// Use batch script for HMS execution
 	batchPath := GetHMSBatchScriptPath("HMSRealTimeBatch.bat")
 	scriptPath := GetHMSScript("realtime")
-	
-	err = executeBatchFile(ctx, batchPath, scriptPath)
+	hmsModelsDir := AppConfig.Paths.HMSModelsDir
+
+	err = executeBatchFile(ctx, batchPath, scriptPath, hmsModelsDir)
 	if err != nil {
 		return fmt.Errorf("failed at step %d (HMS RealTime Computation): %w", finalStepNum, err)
 	}
-	
+
 	log.Printf("STEP %d: 'HMS RealTime Computation' completed successfully.", finalStepNum)
+
+	err = ProcessAllJunctionFlows()
+
+	if err != nil {
+		return fmt.Errorf("failed at step %d (Json File Update All Junction FLows): %w", finalStepNum+1, err)
+	}
 
 	log.Println("INFO: All processing steps triggered successfully!")
 	return nil

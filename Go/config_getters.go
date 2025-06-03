@@ -50,7 +50,7 @@ func GetHMSScript(runType string) string {
 	default:
 		scriptPath = filepath.Join(AppConfig.Paths.HMSScriptsDir, AppConfig.HMS.RealTimeScript)
 	}
-	
+
 	// Convert to absolute path
 	absPath, err := filepath.Abs(scriptPath)
 	if err != nil {
@@ -63,6 +63,9 @@ func GetHMSScript(runType string) string {
 // GetDSSPath returns the full path to a DSS file in the Leon Creek model
 func GetDSSPath(filename string) string {
 	return filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "Rainfall", filename)
+}
+func GetHistoricalDSSPath(filename string) string {
+	return filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "Rainfall", filename)
 }
 
 // GetGribDownloadPath returns the full path for GRIB downloads
