@@ -50,7 +50,7 @@ func GetHMSScript(runType string) string {
 	default:
 		scriptPath = filepath.Join(AppConfig.Paths.HMSScriptsDir, AppConfig.HMS.RealTimeScript)
 	}
-	
+
 	// Convert to absolute path
 	absPath, err := filepath.Abs(scriptPath)
 	if err != nil {
