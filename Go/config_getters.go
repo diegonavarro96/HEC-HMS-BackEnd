@@ -2,7 +2,17 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
+	"strings"
 )
+
+// getScriptExtension returns the appropriate script extension based on the OS
+func getScriptExtension() string {
+	if runtime.GOOS == "windows" {
+		return ".bat"
+	}
+	return ".sh"
+}
 
 // GetPythonPath returns the appropriate Python executable path
 func GetPythonPath(envType string) string {
@@ -22,7 +32,15 @@ func GetJythonPath() string {
 }
 
 // GetJythonBatchScriptPath returns the full path to a Jython batch script
+// Automatically adjusts the extension based on the operating system
 func GetJythonBatchScriptPath(scriptName string) string {
+	// If the script name ends with .bat, adjust for the OS
+	if strings.HasSuffix(scriptName, ".bat") {
+		if runtime.GOOS != "windows" {
+			// Replace .bat with .sh for non-Windows systems
+			scriptName = strings.TrimSuffix(scriptName, ".bat") + ".sh"
+		}
+	}
 	return filepath.Join(AppConfig.Jython.BatchScriptsDir, scriptName)
 }
 
@@ -50,7 +68,7 @@ func GetHMSScript(runType string) string {
 	default:
 		scriptPath = filepath.Join(AppConfig.Paths.HMSScriptsDir, AppConfig.HMS.RealTimeScript)
 	}
-	
+
 	// Convert to absolute path
 	absPath, err := filepath.Abs(scriptPath)
 	if err != nil {
@@ -63,6 +81,11 @@ func GetHMSScript(runType string) string {
 // GetDSSPath returns the full path to a DSS file in the Leon Creek model
 func GetDSSPath(filename string) string {
 	return filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "Rainfall", filename)
+}
+
+// GetDSSPath returns the full path to a DSS file in the Leon Creek model
+func GetHistoricalDSSPath(filename string) string {
+	return filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "Rainfall", filename)
 }
 
 // GetGribDownloadPath returns the full path for GRIB downloads
@@ -81,6 +104,24 @@ func GetJSONOutputPath(filename string) string {
 }
 
 // GetHMSBatchScriptPath returns the full path to an HMS batch script
+// Automatically adjusts the extension based on the operating system
 func GetHMSBatchScriptPath(scriptName string) string {
+	// If the script name ends with .bat, adjust for the OS
+	if strings.HasSuffix(scriptName, ".bat") {
+		if runtime.GOOS != "windows" {
+			// Replace .bat with .sh for non-Windows systems
+			scriptName = strings.TrimSuffix(scriptName, ".bat") + ".sh"
+		}
+	}
 	return filepath.Join(AppConfig.Paths.HMSScriptsDir, "batchScripts", scriptName)
+}
+
+// IsWindows returns true if running on Windows
+func IsWindows() bool {
+	return runtime.GOOS == "windows"
+}
+
+// IsLinux returns true if running on Linux
+func IsLinux() bool {
+	return runtime.GOOS == "linux"
 }

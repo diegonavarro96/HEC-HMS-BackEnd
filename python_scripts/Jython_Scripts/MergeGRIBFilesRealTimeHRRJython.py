@@ -23,9 +23,9 @@ from java.io import File
 import traceback
 
 
-# Configuration - these should be updated based on your setup
-SHAPEFILE_PATH = "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/gis_data/shapefiles/Bexar_County.shp"  # Update this path
-OUTPUT_DSS_PATH = "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/HRR.dss"  # Update this path
+# Configuration - read from environment variables or use defaults
+SHAPEFILE_PATH = os.environ.get('VORTEX_SHAPEFILE_PATH', '/mnt/d/Floodace Projects/HEC-HMS-BackEnd/gis_data/shapefiles/Bexar_County.shp')
+OUTPUT_DSS_PATH = os.environ.get('VORTEX_OUTPUT_DSS_PATH_HRR', '/mnt/d/Floodace Projects/HEC-HMS-BackEnd/hms_models/LeonCreek/Rainfall/HRR.dss')
 VARIABLES = ["Total_precipitation_surface_Mixed_intervals_Accumulation"]  # Update with actual variables from variablesv3
 
 def collect_grib_files(folder_path):
@@ -38,7 +38,7 @@ def collect_grib_files(folder_path):
     print("Scanning folder: %s" % folder_path)
     
     for filename in os.listdir(folder_path):
-        if "wrfsfcf" in filename in filename and filename.lower().endswith((".grb2", ".grib2")):
+        if "wrfsfcf" in filename and filename.lower().endswith((".grb2", ".grib2")):
             file_path = os.path.join(folder_path, filename)
             files.append(file_path)
     

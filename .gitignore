@@ -43,6 +43,10 @@ Go/.jython_cache
 
 python_scripts/Jython_Scripts/batchScripts/.jython_cache/packages
 
+grb_downloads/*
+
+gis_data/shapefiles/*
+
 # Ignore all .jython_cache directories
 **/.jython_cache/
 .jython_cache/

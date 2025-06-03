@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,21 +77,40 @@ func executeJythonScript(ctx context.Context, scriptPath string) error {
 	return nil
 }
 
-// executeBatchFile is a helper function to execute a Windows batch file
+// executeBatchFile is a helper function to execute a batch file or shell script
 func executeBatchFile(ctx context.Context, batchPath string, batchArgs ...string) error {
 	absBatchPath, err := filepath.Abs(batchPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for batch file %s: %w", batchPath, err)
 	}
 
-	cmdArgs := append([]string{"/c", absBatchPath}, batchArgs...)
-	cmd := exec.CommandContext(ctx, "cmd.exe", cmdArgs...)
+	// Determine the appropriate shell command based on the operating system
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// Windows: expect .bat files
+		if !strings.HasSuffix(absBatchPath, ".bat") {
+			return fmt.Errorf("on Windows, expected .bat file but got: %s", batchPath)
+		}
+		cmdArgs := append([]string{"/c", absBatchPath}, batchArgs...)
+		cmd = exec.CommandContext(ctx, "cmd.exe", cmdArgs...)
+	} else {
+		// Linux/Unix: expect .sh files
+		if !strings.HasSuffix(absBatchPath, ".sh") {
+			return fmt.Errorf("on Linux/Unix, expected .sh file but got: %s", batchPath)
+		}
+		// Make sure the script is executable
+		if err := os.Chmod(absBatchPath, 0755); err != nil {
+			log.Printf("Warning: Failed to set executable permission on %s: %v", absBatchPath, err)
+		}
+		cmdArgs := append([]string{absBatchPath}, batchArgs...)
+		cmd = exec.CommandContext(ctx, "bash", cmdArgs...)
+	}
 
 	// Set working directory to the directory containing the batch file
 	// This ensures relative paths in the batch file work correctly
 	cmd.Dir = filepath.Dir(absBatchPath)
 
-	log.Printf("INFO: Executing batch file: cmd.exe %s", strings.Join(cmdArgs, " "))
+	log.Printf("INFO: Executing script: %s", cmd.String())
 
 	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
 
@@ -101,10 +121,10 @@ func executeBatchFile(ctx context.Context, batchPath string, batchArgs ...string
 
 	if err != nil {
 		// If there was an error, CombinedOutput() might still contain useful error messages
-		return fmt.Errorf("failed to execute batch file %s (resolved to %s): %w. Output: %s", batchPath, absBatchPath, err, string(output))
+		return fmt.Errorf("failed to execute script %s (resolved to %s): %w. Output: %s", batchPath, absBatchPath, err, string(output))
 	}
 
-	log.Printf("INFO: Batch file %s (resolved to %s) completed successfully.", batchPath, absBatchPath)
+	log.Printf("INFO: Script %s (resolved to %s) completed successfully.", batchPath, absBatchPath)
 	return nil
 }
 
@@ -728,7 +748,8 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	finalStepNum := controlFileStepNum + 1
 	log.Printf("STEP %d: Running 'HMS RealTime Computation'...", finalStepNum)
 
-	// Use batch script for HMS execution
+	// Use batch/shell script for HMS execution
+	// GetHMSBatchScriptPath will automatically choose .bat or .sh based on OS
 	batchPath := GetHMSBatchScriptPath("HMSRealTimeBatch.bat")
 	scriptPath := GetHMSScript("realtime")
 	

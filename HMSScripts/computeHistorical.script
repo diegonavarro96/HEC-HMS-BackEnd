@@ -1,7 +1,7 @@
 # -- coding: utf-8 --
 from hms.model.JythonHms import * # boots the HMS data model
 
-OpenProject("Leon_46",r"D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek")  # <project-name>, <project-folder>
+OpenProject("Leon_46", "/mnt/d/Floodace Projects/HEC-HMS-BackEnd/hms_models/Historical/LeonCreek")  # <project-name>, <project-folder>
 print("Computing Run Rain Historical")
 ComputeRun("RainHistorical")                     # any Simulation Run that already works
 
