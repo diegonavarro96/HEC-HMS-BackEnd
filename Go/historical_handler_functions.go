@@ -271,6 +271,29 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Create output directory
 	outputDir := filepath.Join(AppConfig.Paths.GribFilesDir, "historical", req.EndDate)
+	
+	// Check if directory exists and clean it
+	if _, err := os.Stat(outputDir); err == nil {
+		log.Printf("Directory %s exists, removing all files inside...", outputDir)
+		
+		// Read directory contents
+		entries, err := os.ReadDir(outputDir)
+		if err != nil {
+			return fmt.Errorf("failed to read directory: %w", err)
+		}
+		
+		// Remove all files in the directory
+		for _, entry := range entries {
+			filePath := filepath.Join(outputDir, entry.Name())
+			if err := os.RemoveAll(filePath); err != nil {
+				log.Printf("Warning: Failed to remove %s: %v", filePath, err)
+			}
+		}
+		
+		log.Printf("Cleaned up %d items from directory", len(entries))
+	}
+	
+	// Create directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -339,8 +362,9 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	// Use batch script for HMS execution
 	batchPath := GetHMSBatchScriptPath("HMSHistoricalBatch.bat")
 	scriptPath := GetHMSScript("historical")
+	hmsModelsDir := AppConfig.Paths.HMSHistoricalModelsDir
 
-	err = executeBatchFile(ctx, batchPath, scriptPath)
+	err = executeBatchFile(ctx, batchPath, scriptPath, hmsModelsDir)
 	if err != nil {
 		return fmt.Errorf("failed at step 4 (HMS Historical Computation): %w", err)
 	}
