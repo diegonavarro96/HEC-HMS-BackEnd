@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -12,14 +13,20 @@ import (
 
 // ProcessAllJunctionFlows executes the Jython script to generate all junction flow data
 func ProcessAllJunctionFlows() error {
+	// Use the HMS output DSS file (LeonCreek model RainrealTime.dss) 
+	dssPath := filepath.Join(AppConfig.Paths.HMSModelsDir, "LeonCreek", "RainrealTime.dss")
+	jsonPath := GetJSONOutputPath("output.json")
+	
 	// Execute the Jython script to generate all junction flows
 	scriptPath := GetPythonScriptPath("Jython_Scripts/extract_all_dss_data.py")
 	log.Printf("Executing Jython script: %s", scriptPath)
+	log.Printf("Using HMS output DSS file: %s", dssPath)
+	log.Printf("Output JSON: %s", jsonPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute) // Increased timeout for processing all junctions
 	defer cancel()
 
-	err := executeJythonScript(ctx, scriptPath)
+	err := executeJythonScript(ctx, scriptPath, dssPath, jsonPath)
 	if err != nil {
 		log.Printf("Error executing Jython script for all junction flow data: %v", err)
 		return err

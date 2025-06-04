@@ -37,7 +37,7 @@ echo "Script path: $SCRIPT_PATH"
 cd "$HMS_SCRIPTS_DIR"
 
 # Execute HEC-HMS with the script
-"$HMS_HOME/bin/hec-hms.sh" -s "$SCRIPT_PATH"
+"$HMS_HOME/hec-hms.sh" -s "$SCRIPT_PATH"
 
 # Check if the command was successful
 if [ $? -eq 0 ]; then

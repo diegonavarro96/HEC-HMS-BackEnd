@@ -54,3 +54,4 @@ gis_data/shapefiles/*
 HMSModels/
 
 *.log
+JSON/*

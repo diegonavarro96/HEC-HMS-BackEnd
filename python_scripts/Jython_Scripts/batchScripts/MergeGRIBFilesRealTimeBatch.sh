@@ -3,32 +3,52 @@
 # This script merges GRIB files using Jython and Vortex
 
 # ===== BASIC CONFIGURATION =====================================
-VORTEX_HOME="/opt/vortex/vortex-0.11.25"
+HMS_HOME="/opt/hms"
 JYTHON_JAR="/opt/jython.jar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JYTHON_SCRIPT="$(dirname "$SCRIPT_DIR")/MergeGRIBFilesRealTimeJython.py"
 HEAP_GB=32  # Adjust heap size as needed
 
+# Use HMS's Java for compatibility
+JAVA_EXEC="$HMS_HOME/jre/bin/java"
+
+# ===== SCRIPT ARGUMENTS ========================================
+# Go passes: gribDownloadPath, shapefilePath, outputDSS
+INPUT_FOLDER="$1"
+SHAPEFILE_PATH_ARG="$2"
+OUTPUT_DSS="$3"
+
+# Use default shapefile if empty string passed
+if [ -z "$SHAPEFILE_PATH_ARG" ]; then
+    SHAPEFILE_PATH="/home/diego/Documents/FloodaceDocuments/HEC-HMS-BackEnd/gis_data/shapefiles/Bexar_County.shp"
+else
+    SHAPEFILE_PATH="$SHAPEFILE_PATH_ARG"
+fi
+
+# Export for Jython script
+export VORTEX_OUTPUT_DSS_PATH="$OUTPUT_DSS"
+export VORTEX_SHAPEFILE_PATH="$SHAPEFILE_PATH"
+
 # ===== PATHS AND ENVIRONMENT VARIABLES =========================
-export PATH="$VORTEX_HOME/bin/gdal:$VORTEX_HOME/bin/netcdf:$PATH"
-export GDAL_DATA="/usr/share/gdal"
-export PROJ_LIB="/usr/share/proj"
+# Use minimal environment to avoid conflicts
+export GDAL_DATA="$HMS_HOME/bin/gdal/gdal-data"
+export PROJ_LIB="$HMS_HOME/bin/gdal/proj"
 
 # ----- CLASSPATH -----------------------------------------------
-export CLASSPATH="$VORTEX_HOME/lib/*:$JYTHON_JAR"
+export CLASSPATH="$HMS_HOME/lib/*:$JYTHON_JAR"
 
 # ===== LIMIT PARALLELISM (avoid ConcurrentImporter) ============
 export JAVA_TOOL_OPTIONS="-Djava.util.concurrent.ForkJoinPool.common.parallelism=1"
 
 # ===== CHECK HEAP ALLOCATION ===================================
 echo "=== JVM heap check =========================================="
-java -Xmx${HEAP_GB}g -XX:+PrintFlagsFinal -version 2>&1 | grep -i "MaxHeapSize"
+$JAVA_EXEC -Xmx${HEAP_GB}g -XX:+PrintFlagsFinal -version 2>&1 | grep -i "MaxHeapSize"
 echo "============================================================="
 
 # ===== RUN THE JYTHON SCRIPT ===================================
-java \
+$JAVA_EXEC \
     -Xmx${HEAP_GB}g \
-    -Djava.library.path="$VORTEX_HOME/bin:$VORTEX_HOME/bin/gdal" \
+    -Djava.library.path="$HMS_HOME/bin" \
     -cp "$CLASSPATH" \
     org.python.util.jython "$JYTHON_SCRIPT" "$@"
 

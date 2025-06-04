@@ -50,16 +50,44 @@ func executePythonScript(ctx context.Context, scriptPath string, scriptArgs ...s
 	return nil
 }
 
-// executePythonScript is a helper function to execute a Python script
-func executeJythonScript(ctx context.Context, scriptPath string) error {
+// executeJythonScript is a helper function to execute a Jython script using HMS Java runtime
+func executeJythonScript(ctx context.Context, scriptPath string, scriptArgs ...string) error {
 	absScriptPath, err := filepath.Abs(scriptPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for script %s: %w", scriptPath, err)
 	}
 
-	cmd := exec.CommandContext(ctx, GetJythonPath(), absScriptPath)
+	// Use HMS Java runtime with proper classpath like the batch scripts
+	hmsHome := "/opt/hms"
+	jythonJar := "/opt/jython.jar"
+	javaExec := filepath.Join(hmsHome, "jre", "bin", "java")
+	classpath := filepath.Join(hmsHome, "lib") + "/*:" + jythonJar
 
-	log.Printf("INFO: Executing command: %s %s", GetJythonPath(), absScriptPath)
+	// Set up environment variables
+	env := append(os.Environ(),
+		"GDAL_DATA="+filepath.Join(hmsHome, "bin", "gdal", "gdal-data"),
+		"PROJ_LIB="+filepath.Join(hmsHome, "bin", "gdal", "proj"),
+		"CLASSPATH="+classpath,
+		"JAVA_TOOL_OPTIONS=-Djava.util.concurrent.ForkJoinPool.common.parallelism=1",
+	)
+
+	// Create command with HMS Java
+	cmdArgs := []string{
+		"-Xmx8g",
+		"-Djava.library.path=" + filepath.Join(hmsHome, "bin"),
+		"-cp", classpath,
+		"org.python.util.jython",
+		absScriptPath,
+	}
+	
+	// Add script arguments
+	cmdArgs = append(cmdArgs, scriptArgs...)
+
+	cmd := exec.CommandContext(ctx, javaExec, cmdArgs...)
+	cmd.Env = env
+
+	log.Printf("INFO: Executing Jython script: %s", scriptPath)
+	log.Printf("INFO: Executing command: %s %s", javaExec, strings.Join(cmdArgs, " "))
 
 	output, err := cmd.CombinedOutput() // Captures both stdout and stderr
 
@@ -651,8 +679,12 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 			path:    GetJythonBatchScriptPath("MergeGRIBFilesRealTimeBatch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
-				// Pass the full folder path to the batch file
-				return []string{GetGribDownloadPath(dateToUse)}
+				// Pass the arguments as separate elements
+				return []string{
+					GetGribDownloadPath(dateToUse),
+					AppConfig.Paths.ShapefilePath,
+					GetDSSPath("RainfallRealTime.dss"),
+				}
 			},
 		},
 		{
@@ -673,8 +705,12 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 			path:    GetJythonBatchScriptPath("MergeGRIBFilesRealTimeHRRBatch.bat"),
 			isBatch: true,
 			argsFunc: func() []string {
-				// Pass the full folder path to the batch file
-				return []string{GetGribDownloadPath(dateToUse)}
+				// Pass the arguments as separate elements
+				return []string{
+					GetGribDownloadPath(dateToUse),
+					AppConfig.Paths.ShapefilePath,
+					GetDSSPath("HRR.dss"),
+				}
 			},
 		},
 		{
@@ -753,15 +789,22 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 	batchPath := GetHMSBatchScriptPath("HMSRealTimeBatch.bat")
 	scriptPath := GetHMSScript("realtime")
 	hmsModelsDir := AppConfig.Paths.HMSModelsDir
-	
+
 	err = executeBatchFile(ctx, batchPath, scriptPath, hmsModelsDir)
 	if err != nil {
 		return fmt.Errorf("failed at step %d (HMS RealTime Computation): %w", finalStepNum, err)
 	}
-	
+
 	log.Printf("STEP %d: 'HMS RealTime Computation' completed successfully.", finalStepNum)
 
+	err = ProcessAllJunctionFlows()
+
+	if err != nil {
+		return fmt.Errorf("failed at step %d (Json File Update All Junction FLows): %w", finalStepNum+1, err)
+	}
+
 	log.Println("INFO: All processing steps triggered successfully!")
+
 	return nil
 }
 

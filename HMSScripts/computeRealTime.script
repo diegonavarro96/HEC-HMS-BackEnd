@@ -9,7 +9,7 @@ if not hms_models_directory:
     sys.exit(1)
 
 # Construct the full path to the RealTime project
-realtime_project_path = hms_models_directory
+realtime_project_path = os.path.join(hms_models_directory,"LeonCreek")
 print("Opening project from: " + realtime_project_path)
 
 OpenProject("Leon_46", realtime_project_path)  # <project-name>, <project-folder>

@@ -52,6 +52,7 @@ type PathsConfig struct {
 	DSSArchiveDir          string `mapstructure:"dss_archive_dir"`
 	GrbDownloadsDir        string `mapstructure:"grb_downloads_dir"`
 	HMSScriptsDir          string `mapstructure:"hms_scripts_dir"`
+	ShapefilePath          string `mapstructure:"shapefile_path"`
 }
 
 type URLsConfig struct {
@@ -177,5 +178,6 @@ func convertPathsToUnix(paths PathsConfig) PathsConfig {
 	paths.DSSArchiveDir = filepath.ToSlash(paths.DSSArchiveDir)
 	paths.GrbDownloadsDir = filepath.ToSlash(paths.GrbDownloadsDir)
 	paths.HMSScriptsDir = filepath.ToSlash(paths.HMSScriptsDir)
+	paths.ShapefilePath = filepath.ToSlash(paths.ShapefilePath)
 	return paths
 }
