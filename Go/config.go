@@ -131,6 +131,11 @@ func LoadConfig(configPath string) error {
 	// Process paths for OS compatibility
 	processPathsForOS()
 
+	// Convert relative paths to absolute paths
+	if err := resolveRelativePaths(); err != nil {
+		return fmt.Errorf("error resolving relative paths: %w", err)
+	}
+
 	return nil
 }
 
@@ -180,4 +185,86 @@ func convertPathsToUnix(paths PathsConfig) PathsConfig {
 	paths.HMSScriptsDir = filepath.ToSlash(paths.HMSScriptsDir)
 	paths.ShapefilePath = filepath.ToSlash(paths.ShapefilePath)
 	return paths
+}
+
+func resolveRelativePaths() error {
+	// Convert all relative paths to absolute paths
+	var err error
+	
+	// Convert PathsConfig fields
+	if AppConfig.Paths.LogDir, err = filepath.Abs(AppConfig.Paths.LogDir); err != nil {
+		return fmt.Errorf("failed to resolve LogDir: %w", err)
+	}
+	if AppConfig.Paths.StaticCogDir, err = filepath.Abs(AppConfig.Paths.StaticCogDir); err != nil {
+		return fmt.Errorf("failed to resolve StaticCogDir: %w", err)
+	}
+	if AppConfig.Paths.TestTifFile, err = filepath.Abs(AppConfig.Paths.TestTifFile); err != nil {
+		return fmt.Errorf("failed to resolve TestTifFile: %w", err)
+	}
+	if AppConfig.Paths.GribFilesDir, err = filepath.Abs(AppConfig.Paths.GribFilesDir); err != nil {
+		return fmt.Errorf("failed to resolve GribFilesDir: %w", err)
+	}
+	if AppConfig.Paths.HMSModelsDir, err = filepath.Abs(AppConfig.Paths.HMSModelsDir); err != nil {
+		return fmt.Errorf("failed to resolve HMSModelsDir: %w", err)
+	}
+	if AppConfig.Paths.HMSHistoricalModelsDir, err = filepath.Abs(AppConfig.Paths.HMSHistoricalModelsDir); err != nil {
+		return fmt.Errorf("failed to resolve HMSHistoricalModelsDir: %w", err)
+	}
+	if AppConfig.Paths.PythonScriptsDir, err = filepath.Abs(AppConfig.Paths.PythonScriptsDir); err != nil {
+		return fmt.Errorf("failed to resolve PythonScriptsDir: %w", err)
+	}
+	if AppConfig.Paths.JSONOutputDir, err = filepath.Abs(AppConfig.Paths.JSONOutputDir); err != nil {
+		return fmt.Errorf("failed to resolve JSONOutputDir: %w", err)
+	}
+	if AppConfig.Paths.CSVDir, err = filepath.Abs(AppConfig.Paths.CSVDir); err != nil {
+		return fmt.Errorf("failed to resolve CSVDir: %w", err)
+	}
+	if AppConfig.Paths.DataDir, err = filepath.Abs(AppConfig.Paths.DataDir); err != nil {
+		return fmt.Errorf("failed to resolve DataDir: %w", err)
+	}
+	if AppConfig.Paths.DSSArchiveDir, err = filepath.Abs(AppConfig.Paths.DSSArchiveDir); err != nil {
+		return fmt.Errorf("failed to resolve DSSArchiveDir: %w", err)
+	}
+	if AppConfig.Paths.GrbDownloadsDir, err = filepath.Abs(AppConfig.Paths.GrbDownloadsDir); err != nil {
+		return fmt.Errorf("failed to resolve GrbDownloadsDir: %w", err)
+	}
+	if AppConfig.Paths.HMSScriptsDir, err = filepath.Abs(AppConfig.Paths.HMSScriptsDir); err != nil {
+		return fmt.Errorf("failed to resolve HMSScriptsDir: %w", err)
+	}
+	if AppConfig.Paths.ShapefilePath, err = filepath.Abs(AppConfig.Paths.ShapefilePath); err != nil {
+		return fmt.Errorf("failed to resolve ShapefilePath: %w", err)
+	}
+
+	// Convert JythonConfig fields
+	if AppConfig.Jython.BatchScriptsDir, err = filepath.Abs(AppConfig.Jython.BatchScriptsDir); err != nil {
+		return fmt.Errorf("failed to resolve BatchScriptsDir: %w", err)
+	}
+
+	// Convert HMSConfig fields
+	if AppConfig.HMS.RealTimeControlFile, err = filepath.Abs(AppConfig.HMS.RealTimeControlFile); err != nil {
+		return fmt.Errorf("failed to resolve RealTimeControlFile: %w", err)
+	}
+	if AppConfig.HMS.HistoricalControlFile, err = filepath.Abs(AppConfig.HMS.HistoricalControlFile); err != nil {
+		return fmt.Errorf("failed to resolve HistoricalControlFile: %w", err)
+	}
+
+	// Convert LeonCreekConfig fields
+	if AppConfig.HMS.LeonCreekModel.RainfallDir, err = filepath.Abs(AppConfig.HMS.LeonCreekModel.RainfallDir); err != nil {
+		return fmt.Errorf("failed to resolve RainfallDir: %w", err)
+	}
+	if AppConfig.HMS.LeonCreekModel.RealTimeDSS, err = filepath.Abs(AppConfig.HMS.LeonCreekModel.RealTimeDSS); err != nil {
+		return fmt.Errorf("failed to resolve RealTimeDSS: %w", err)
+	}
+	if AppConfig.HMS.LeonCreekModel.HistoricalDSS, err = filepath.Abs(AppConfig.HMS.LeonCreekModel.HistoricalDSS); err != nil {
+		return fmt.Errorf("failed to resolve HistoricalDSS: %w", err)
+	}
+
+	// Convert FilesToDelete slice
+	for i, filePath := range AppConfig.HMS.LeonCreekModel.FilesToDelete {
+		if AppConfig.HMS.LeonCreekModel.FilesToDelete[i], err = filepath.Abs(filePath); err != nil {
+			return fmt.Errorf("failed to resolve FilesToDelete[%d]: %w", i, err)
+		}
+	}
+
+	return nil
 }

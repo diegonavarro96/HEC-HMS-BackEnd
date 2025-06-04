@@ -223,6 +223,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Delete RainfallHistorical.dss
 	existingDSSPath2 := GetHistoricalDSSPath("RainfallHistorical.dss")
+	log.Printf(" RainFallHistroical PATH: ----------- ------------- %s", existingDSSPath2)
 	if _, err := os.Stat(existingDSSPath2); err == nil {
 		log.Printf("Deleting existing RainfallHistorical.dss file...")
 		if err := os.Remove(existingDSSPath2); err != nil {
@@ -271,17 +272,17 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 
 	// Create output directory
 	outputDir := filepath.Join(AppConfig.Paths.GribFilesDir, "historical", req.EndDate)
-	
+
 	// Check if directory exists and clean it
 	if _, err := os.Stat(outputDir); err == nil {
 		log.Printf("Directory %s exists, removing all files inside...", outputDir)
-		
+
 		// Read directory contents
 		entries, err := os.ReadDir(outputDir)
 		if err != nil {
 			return fmt.Errorf("failed to read directory: %w", err)
 		}
-		
+
 		// Remove all files in the directory
 		for _, entry := range entries {
 			filePath := filepath.Join(outputDir, entry.Name())
@@ -289,10 +290,10 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 				log.Printf("Warning: Failed to remove %s: %v", filePath, err)
 			}
 		}
-		
+
 		log.Printf("Cleaned up %d items from directory", len(entries))
 	}
-	
+
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)

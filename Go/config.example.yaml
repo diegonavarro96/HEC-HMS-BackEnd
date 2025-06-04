@@ -1,3 +1,4 @@
+# Working example at a certain time 20250602
 # HMS Backend Configuration
 # Copy this file to config.yaml and update the values for your environment
 
@@ -22,15 +23,17 @@ paths:
   log_dir: "logs"
   static_cog_dir: "../data/cogs_output"
   test_tif_file: "cogs_output/reprojectv5.tif"
-  grib_files_dir: "gribFiles"
-  hms_models_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models"
+  grib_files_dir: "../gribFiles"
+  hms_models_dir: "../hms_models/RealTime"
+  hms_historical_models_dir: "../hms_models/Historical"
   python_scripts_dir: "../python_scripts"
   json_output_dir: "../JSON"
   csv_dir: "../CSV"
   data_dir: "../data"
-  dss_archive_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/dssArchive"
-  grb_downloads_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/grb_downloads"
+  dss_archive_dir: "../hms_models/RealTime/LeonCreek/dssArchive"
+  grb_downloads_dir: "../grb_downloads"
   hms_scripts_dir: "../HMSScripts"
+  shapefile_path: "../gis_data/shapefiles/Bexar_County.shp"
 
 urls:
   # External service URLs
@@ -43,33 +46,33 @@ urls:
 
 python:
   # Python environment paths - adjust for your system
-  hms_env_path: "C:/Users/your_username/anaconda3/envs/HMS/python.exe"
-  grib2cog_env_path: "C:/Users/your_username/anaconda3/envs/grib2cog/python.exe"
+  hms_env_path: "/home/diego/miniconda3/envs/hechmsfloodace/bin/python"
+  grib2cog_env_path: "/home/diego/miniconda3/envs/grib2cog/bin/python"
 
 jython:
   # Jython configuration - adjust for your HEC-DSSVue installation
-  executable_path: "C:/Program Files/HEC/HEC-DSSVue/jython.bat"
-  batch_scripts_dir: "D:/FloodaceDocuments/HMS/HMSBackend/python_scripts/Jython_Scripts/batchScripts"
+  executable_path: "java -jar /opt/jython.jar"
+  batch_scripts_dir: "../python_scripts/Jython_Scripts/batchScripts"
 
 hms:
   # HEC-HMS configuration - adjust for your HMS installation
-  executable_path: "C:/Program Files/HEC/HEC-HMS/4.12/HEC-HMS.cmd"
+  executable_path: "/opt/hms/hec-hms.sh"
   version: "4.12"
-  realtime_control_file: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/RainRealTime.control"
-  historical_control_file: "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.control"
+  realtime_control_file: "../hms_models/RealTime/LeonCreek/RainRealTime.control"
+  historical_control_file: "../hms_models/Historical/LeonCreek/RainHistorical.control"
   realtime_script: "computeRealTime.script"
   historical_script: "computeHistorical.script"
   
   leon_creek_model:
-    rainfall_dir: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall"
-    realtime_dss: "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/RainrealTime.dss"
-    historical_dss: "D:/FloodaceDocuments/HMS/HMSBackend/hms_models/LeonCreek/RainHistorical.dss"
+    rainfall_dir: "../hms_models/RealTime/LeonCreek/Rainfall"
+    realtime_dss: "../hms_models/RealTime/LeonCreek/RainrealTime.dss"
+    historical_dss: "../hms_models/Historical/LeonCreek/RainHistorical.dss"
     files_to_delete:
-      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/HRR.dss"
-      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTime.dss"
-      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimeAndForcast.dss"
-      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimePass1And2.dss"
-      - "D:/FloodaceDocuments/HMS/HMSGit/HEC-HMS-Floodace/hms_models/LeonCreek/Rainfall/RainfallRealTimePass2.dss"
+      - "../hms_models/RealTime/LeonCreek/Rainfall/HRR.dss"
+      - "../hms_models/RealTime/LeonCreek/Rainfall/RainfallRealTime.dss"
+      - "../hms_models/RealTime/LeonCreek/Rainfall/RainfallRealTimeAndForcast.dss"
+      - "../hms_models/RealTime/LeonCreek/Rainfall/RainfallRealTimePass1And2.dss"
+      - "../hms_models/RealTime/LeonCreek/Rainfall/RainfallRealTimePass2.dss"
 
 cors:
   # CORS configuration
