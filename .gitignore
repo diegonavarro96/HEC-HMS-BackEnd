@@ -50,3 +50,7 @@ gis_data/shapefiles/*
 # Ignore all .jython_cache directories
 **/.jython_cache/
 .jython_cache/
+
+HMSModels/
+
+*.log

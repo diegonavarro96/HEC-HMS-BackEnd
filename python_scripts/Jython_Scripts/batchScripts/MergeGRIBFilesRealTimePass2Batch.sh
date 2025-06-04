@@ -22,7 +22,7 @@ OUTPUT_DSS="$3"
 
 # Use default shapefile if empty string passed
 if [ -z "$SHAPEFILE_PATH_ARG" ]; then
-    SHAPEFILE_PATH="/mnt/d/Floodace Projects/HEC-HMS-BackEnd/gis_data/shapefiles/Bexar_County.shp"
+    SHAPEFILE_PATH="/home/diego/Documents/FloodaceDocuments/HEC-HMS-BackEnd/gis_data/shapefiles/Bexar_County.shp"
 else
     SHAPEFILE_PATH="$SHAPEFILE_PATH_ARG"
 fi
