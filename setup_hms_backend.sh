@@ -30,6 +30,7 @@ LETSENCRYPT_EMAIL=""
 # Parse command line arguments
 SHOW_HELP=false
 CLEAR_CACHE=false
+VERIFY_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -46,6 +47,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clear-cache)
             CLEAR_CACHE=true
+            ;;
+        --verify-gdrive)
+            VERIFY_ONLY=true
             ;;
         --help|-h)
             SHOW_HELP=true
@@ -71,6 +75,7 @@ show_help() {
     echo "  --domain DOMAIN     Set domain for SSL certificate (e.g., hms.example.com)"
     echo "  --email EMAIL       Email for Let's Encrypt SSL certificate"
     echo "  --clear-cache       Clear cached values (Google Drive IDs, etc.)"
+    echo "  --verify-gdrive     Only verify Google Drive file accessibility and exit"
     echo "  -h, --help          Show this help message"
     echo ""
     echo "STEPS:"
@@ -112,6 +117,38 @@ if $CLEAR_CACHE; then
     else
         echo -e "${YELLOW}No cache file found${NC}"
     fi
+    exit 0
+fi
+
+# Handle verify-only option
+if $VERIFY_ONLY; then
+    clear
+    echo "================================================================="
+    echo "   Google Drive Files Verification"
+    echo "================================================================="
+    echo ""
+    
+    # Initialize variables
+    DB_PASSWORD=""
+    
+    # Get Google Drive IDs from cache or prompt
+    temp_id=$(prompt_with_cache "Google Drive file ID/URL for HEC-HMS ZIP file" "gdrive_hms_id" "")
+    HMS_GOOGLE_DRIVE_ID=$(extract_google_drive_id "$temp_id")
+    
+    temp_id=$(prompt_with_cache "Google Drive file ID/URL for RealTime models ZIP" "gdrive_realtime_id" "")
+    GOOGLE_DRIVE_REALTIME_ID=$(extract_google_drive_id "$temp_id")
+    
+    temp_id=$(prompt_with_cache "Google Drive file ID/URL for Historical models ZIP" "gdrive_historical_id" "")
+    GOOGLE_DRIVE_HISTORICAL_ID=$(extract_google_drive_id "$temp_id")
+    
+    temp_id=$(prompt_with_cache "Google Drive file ID/URL for Bexar County shapefile ZIP" "gdrive_shapefile_id" "")
+    GOOGLE_DRIVE_SHAPEFILE_ID=$(extract_google_drive_id "$temp_id")
+    
+    # Run verification
+    verify_all_google_drive_files
+    
+    echo ""
+    echo "Verification complete!"
     exit 0
 fi
 
@@ -284,6 +321,87 @@ extract_google_drive_id() {
     fi
     
     echo "$id"
+}
+
+# Function to verify Google Drive file accessibility
+verify_google_drive_file() {
+    local file_id="$1"
+    local description="$2"
+    
+    if [ -z "$file_id" ]; then
+        return 0  # Skip verification if no ID provided
+    fi
+    
+    echo -n "  Verifying $description... "
+    
+    # Try to get file metadata using Google Drive API (public access)
+    local response=$(curl -s "https://drive.google.com/uc?export=download&id=$file_id" -I --max-time 10)
+    
+    if echo "$response" | grep -q "HTTP/2 200\|HTTP/1.1 200"; then
+        # File is accessible
+        echo -e "${GREEN}✓ Accessible${NC}"
+        return 0
+    elif echo "$response" | grep -q "Content-Length: [0-9]"; then
+        # File exists but might need confirmation for large files
+        echo -e "${YELLOW}⚠ Large file (may need confirmation)${NC}"
+        return 0
+    elif echo "$response" | grep -q "HTTP/2 404\|HTTP/1.1 404"; then
+        echo -e "${RED}✗ File not found (404)${NC}"
+        return 1
+    elif echo "$response" | grep -q "HTTP/2 403\|HTTP/1.1 403"; then
+        echo -e "${RED}✗ Access denied (403) - File may be private${NC}"
+        return 1
+    else
+        echo -e "${YELLOW}⚠ Could not verify (network issue or unusual response)${NC}"
+        return 2  # Warning but don't fail
+    fi
+}
+
+# Function to verify all Google Drive files
+verify_all_google_drive_files() {
+    local verification_failed=false
+    
+    echo ""
+    info "Verifying Google Drive file accessibility..."
+    echo "=============================================="
+    
+    if [ -n "$HMS_GOOGLE_DRIVE_ID" ]; then
+        verify_google_drive_file "$HMS_GOOGLE_DRIVE_ID" "HEC-HMS ZIP file" || verification_failed=true
+    fi
+    
+    if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ]; then
+        verify_google_drive_file "$GOOGLE_DRIVE_REALTIME_ID" "RealTime models ZIP" || verification_failed=true
+    fi
+    
+    if [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; then
+        verify_google_drive_file "$GOOGLE_DRIVE_HISTORICAL_ID" "Historical models ZIP" || verification_failed=true
+    fi
+    
+    if [ -n "$GOOGLE_DRIVE_SHAPEFILE_ID" ]; then
+        verify_google_drive_file "$GOOGLE_DRIVE_SHAPEFILE_ID" "Bexar County shapefile ZIP" || verification_failed=true
+    fi
+    
+    echo ""
+    
+    if $verification_failed; then
+        warning "Some Google Drive files could not be verified or are not accessible."
+        echo "This could mean:"
+        echo "  - The file ID is incorrect"
+        echo "  - The file is not public (doesn't have 'Anyone with the link' permissions)"
+        echo "  - The file has been moved or deleted"
+        echo ""
+        read -p "Do you want to continue anyway? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            error "Setup cancelled due to Google Drive file verification issues"
+        fi
+        echo ""
+        warning "Continuing with setup, but affected downloads may fail..."
+    else
+        if [ -n "$HMS_GOOGLE_DRIVE_ID" ] || [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] || [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ] || [ -n "$GOOGLE_DRIVE_SHAPEFILE_ID" ]; then
+            log "All provided Google Drive files are accessible ✓"
+        fi
+    fi
 }
 
 # Auto-detection functions for each step
@@ -583,6 +701,9 @@ GOOGLE_DRIVE_HISTORICAL_ID=$(extract_google_drive_id "$temp_id")
 
 temp_id=$(prompt_with_cache "Google Drive file ID/URL for Bexar County shapefile ZIP" "gdrive_shapefile_id" "")
 GOOGLE_DRIVE_SHAPEFILE_ID=$(extract_google_drive_id "$temp_id")
+
+# Verify all Google Drive files before proceeding
+verify_all_google_drive_files
 
 echo ""
 info "Setup will proceed with the following configuration:"
