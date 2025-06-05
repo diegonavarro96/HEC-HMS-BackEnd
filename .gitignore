@@ -54,4 +54,4 @@ gis_data/shapefiles/*
 HMSModels/
 
 *.log
-JSON/*
+JSON/*.setup_cache

@@ -20,6 +20,7 @@ HOME_DIR="$HOME"
 PROJECT_NAME="hms-backend"
 PROJECT_DIR="$SCRIPT_DIR"  # Use current directory instead of ~/hms-backend
 LOG_FILE="$SCRIPT_DIR/setup_log_$(date +%Y%m%d_%H%M%S).log"
+CACHE_FILE="$SCRIPT_DIR/.setup_cache"
 
 # AWS deployment variables
 IS_AWS_DEPLOYMENT=false
@@ -28,6 +29,7 @@ LETSENCRYPT_EMAIL=""
 
 # Parse command line arguments
 SHOW_HELP=false
+CLEAR_CACHE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -41,6 +43,9 @@ while [[ $# -gt 0 ]]; do
         --email)
             shift
             LETSENCRYPT_EMAIL="$1"
+            ;;
+        --clear-cache)
+            CLEAR_CACHE=true
             ;;
         --help|-h)
             SHOW_HELP=true
@@ -65,6 +70,7 @@ show_help() {
     echo "  --aws               Enable AWS deployment mode (configures for production)"
     echo "  --domain DOMAIN     Set domain for SSL certificate (e.g., hms.example.com)"
     echo "  --email EMAIL       Email for Let's Encrypt SSL certificate"
+    echo "  --clear-cache       Clear cached values (Google Drive IDs, etc.)"
     echo "  -h, --help          Show this help message"
     echo ""
     echo "STEPS:"
@@ -96,6 +102,17 @@ show_help() {
 
 if $SHOW_HELP; then
     show_help
+fi
+
+# Handle clear cache option
+if $CLEAR_CACHE; then
+    if [ -f "$CACHE_FILE" ]; then
+        rm -f "$CACHE_FILE"
+        echo -e "${GREEN}Cache cleared successfully${NC}"
+    else
+        echo -e "${YELLOW}No cache file found${NC}"
+    fi
+    exit 0
 fi
 
 # Function to log messages
@@ -136,6 +153,65 @@ prompt_with_default() {
 # Function to check command existence
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to save value to cache
+save_to_cache() {
+    local key="$1"
+    local value="$2"
+    
+    # Create cache file if it doesn't exist
+    if [ ! -f "$CACHE_FILE" ]; then
+        touch "$CACHE_FILE"
+        chmod 600 "$CACHE_FILE"  # Only owner can read/write
+    fi
+    
+    # Remove existing entry if present
+    if [ -f "$CACHE_FILE" ]; then
+        grep -v "^$key=" "$CACHE_FILE" > "$CACHE_FILE.tmp" || true
+        mv "$CACHE_FILE.tmp" "$CACHE_FILE"
+    fi
+    
+    # Add new entry
+    echo "$key=$value" >> "$CACHE_FILE"
+}
+
+# Function to read value from cache
+read_from_cache() {
+    local key="$1"
+    
+    if [ -f "$CACHE_FILE" ]; then
+        grep "^$key=" "$CACHE_FILE" 2>/dev/null | cut -d'=' -f2- || echo ""
+    else
+        echo ""
+    fi
+}
+
+# Function to prompt with default value from cache
+prompt_with_cache() {
+    local prompt="$1"
+    local cache_key="$2"
+    local default="$3"
+    local response
+    
+    # Try to get cached value
+    local cached_value=$(read_from_cache "$cache_key")
+    
+    # Use cached value as default if available
+    if [ -n "$cached_value" ]; then
+        default="$cached_value"
+        echo -e "${GREEN}(Using cached value)${NC}"
+    fi
+    
+    read -p "$prompt [$default]: " response
+    response="${response:-$default}"
+    
+    # Save to cache if not empty
+    if [ -n "$response" ]; then
+        save_to_cache "$cache_key" "$response"
+    fi
+    
+    echo "$response"
 }
 
 # Function to ask if user wants to run a step
@@ -454,6 +530,16 @@ echo ""
 
 if $IS_AWS_DEPLOYMENT; then
     echo -e "${BLUE}AWS Deployment Mode Enabled${NC}"
+    
+    # If domain/email not provided via command line, prompt with cache
+    if [ -z "$AWS_INSTANCE_DOMAIN" ]; then
+        AWS_INSTANCE_DOMAIN=$(prompt_with_cache "AWS instance domain (e.g., hms.example.com)" "aws_domain" "")
+    fi
+    
+    if [ -z "$LETSENCRYPT_EMAIL" ] && [ -n "$AWS_INSTANCE_DOMAIN" ]; then
+        LETSENCRYPT_EMAIL=$(prompt_with_cache "Email for Let's Encrypt SSL certificate" "letsencrypt_email" "")
+    fi
+    
     echo "Domain: ${AWS_INSTANCE_DOMAIN:-Not specified}"
     echo "Email: ${LETSENCRYPT_EMAIL:-Not specified}"
     echo ""
@@ -483,18 +569,19 @@ DB_PASSWORD=""
 echo ""
 info "Google Drive Files Information"
 echo "You can paste either the Google Drive file ID or the full URL"
+echo "Previously used values will be suggested automatically"
 echo ""
 
-temp_id=$(prompt_with_default "Google Drive file ID/URL for HEC-HMS ZIP file" "")
+temp_id=$(prompt_with_cache "Google Drive file ID/URL for HEC-HMS ZIP file" "gdrive_hms_id" "")
 HMS_GOOGLE_DRIVE_ID=$(extract_google_drive_id "$temp_id")
 
-temp_id=$(prompt_with_default "Google Drive file ID/URL for RealTime models ZIP" "")
+temp_id=$(prompt_with_cache "Google Drive file ID/URL for RealTime models ZIP" "gdrive_realtime_id" "")
 GOOGLE_DRIVE_REALTIME_ID=$(extract_google_drive_id "$temp_id")
 
-temp_id=$(prompt_with_default "Google Drive file ID/URL for Historical models ZIP" "")
+temp_id=$(prompt_with_cache "Google Drive file ID/URL for Historical models ZIP" "gdrive_historical_id" "")
 GOOGLE_DRIVE_HISTORICAL_ID=$(extract_google_drive_id "$temp_id")
 
-temp_id=$(prompt_with_default "Google Drive file ID/URL for Bexar County shapefile ZIP" "")
+temp_id=$(prompt_with_cache "Google Drive file ID/URL for Bexar County shapefile ZIP" "gdrive_shapefile_id" "")
 GOOGLE_DRIVE_SHAPEFILE_ID=$(extract_google_drive_id "$temp_id")
 
 echo ""
