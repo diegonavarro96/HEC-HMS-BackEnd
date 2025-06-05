@@ -140,6 +140,13 @@ case $choice in
         CITY_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'City of San Antonio' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
         TWDB_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'Texas Water Development Board' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
         
+        # Validate organization IDs
+        if [ -z "$FLOODACE_ID" ] || [ -z "$CITY_ID" ] || [ -z "$TWDB_ID" ]; then
+            error "Failed to retrieve organization IDs. Please check if organizations were created successfully."
+        fi
+        
+        info "Organization IDs retrieved: Floodace=$FLOODACE_ID, City=$CITY_ID, TWDB=$TWDB_ID"
+        
         # Create sample users
         execute_sql "
         INSERT INTO public.\"Users\" (\"firstName\", \"lastName\", username, email, role, organization_id)
@@ -196,9 +203,13 @@ case $choice in
                     error "Please choose a different organization name."
                 fi
             else
-                # Create new organization
-                execute_sql "INSERT INTO public.organizations (name) VALUES ('$org_name');"
-                ORG_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = '$org_name' ORDER BY id DESC LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
+                # Create new organization and capture the ID
+                ORG_ID=$(execute_sql "INSERT INTO public.organizations (name) VALUES ('$org_name') RETURNING id;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
+                
+                # Validate that we got an ID
+                if [ -z "$ORG_ID" ] || [ "$ORG_ID" = "" ]; then
+                    error "Failed to create organization or capture its ID. Please check database permissions."
+                fi
                 log "Organization '$org_name' created with ID: $ORG_ID"
             fi
         fi
@@ -228,6 +239,17 @@ case $choice in
                 3) role="editor" ;;
                 *) role="editor" ;;
             esac
+            
+            # Validate ORG_ID before inserting user
+            if [ -z "$ORG_ID" ] || ! [[ "$ORG_ID" =~ ^[0-9]+$ ]]; then
+                error "Invalid organization ID: '$ORG_ID'. Cannot create user."
+            fi
+            
+            # Escape single quotes in user input to prevent SQL injection
+            first_name="${first_name//\'/\'\'}"
+            last_name="${last_name//\'/\'\'}"
+            username="${username//\'/\'\'}"
+            email="${email//\'/\'\'}"
             
             execute_sql "
             INSERT INTO public.\"Users\" (\"firstName\", \"lastName\", username, email, role, organization_id)
