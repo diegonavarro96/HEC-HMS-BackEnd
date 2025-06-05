@@ -603,8 +603,17 @@ fi
 if ask_to_run_step "Step 1" "Install system dependencies (build tools, Java, PostgreSQL, GDAL, etc.)" "$(check_step_1_completed && echo true || echo false)"; then
     log "Installing system dependencies..."
     
+    # Fix any interrupted dpkg operations
+    if sudo dpkg --audit 2>/dev/null | grep -q .; then
+        log "Fixing interrupted package installations..."
+        sudo dpkg --configure -a || warning "Could not fix dpkg automatically"
+    fi
+    
     log "Updating system packages..."
     sudo apt update || error "Failed to update package list"
+    
+    # Clean up any partial installations
+    sudo apt-get -f install -y || warning "Could not fix broken dependencies"
     
     log "Installing basic dependencies..."
     sudo apt install -y \
