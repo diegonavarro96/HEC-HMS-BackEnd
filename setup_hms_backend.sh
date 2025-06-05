@@ -406,8 +406,8 @@ info "Initial Configuration"
 echo "===================="
 echo ""
 
-# Gather critical information upfront
-DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
+# Initialize DB_PASSWORD variable (will be set later if needed)
+DB_PASSWORD=""
 
 echo ""
 info "Google Drive Files Information"
@@ -513,6 +513,11 @@ fi
 if ask_to_run_step "Step 4" "Setup PostgreSQL database and user" "$(check_step_4_completed && echo true || echo false)"; then
     log "Setting up PostgreSQL..."
     
+    # Ask for database password only when needed
+    if [ -z "$DB_PASSWORD" ]; then
+        DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
+    fi
+    
     # Ensure PostgreSQL is running
     sudo service postgresql start || sudo systemctl start postgresql
     
@@ -531,6 +536,10 @@ EOF
     log "PostgreSQL setup complete"
 else
     log "Skipping Step 4: PostgreSQL setup"
+    # Mark DB_PASSWORD as skipped if PostgreSQL setup is skipped
+    if [ -z "$DB_PASSWORD" ]; then
+        DB_PASSWORD="skipped"
+    fi
 fi
 
 # Step 5: Install Miniconda
@@ -771,6 +780,11 @@ fi
 if ask_to_run_step "Step 12" "Create configuration files (.env and config.yaml)" "$(check_step_12_completed && echo true || echo false)"; then
     log "Creating configuration files..."
     
+    # Ask for database password if not set and not skipped
+    if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "skipped" ]; then
+        DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
+    fi
+    
     # Create .env file for Go
     cat > "$PROJECT_DIR/Go/.env" << EOF
 DB_HOST=localhost
@@ -817,6 +831,11 @@ if ask_to_run_step "Step 13" "Setup database schema and SSL certificates" "$(che
     log "Setting up database schema..."
     
     cd "$PROJECT_DIR/Go"
+    
+    # Ask for database password if not set and not skipped
+    if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "skipped" ]; then
+        DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
+    fi
     
     if [ -f "sql/schema.sql" ]; then
         PGPASSWORD="$DB_PASSWORD" psql -U hms_user -h localhost -d hms_backend -f sql/schema.sql || warning "Database schema may already exist"
