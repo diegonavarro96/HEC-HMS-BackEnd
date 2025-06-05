@@ -357,6 +357,34 @@ check_step_17_completed() {
     return 1
 }
 
+# Function to download file from Google Drive using wget (alternative method)
+download_google_drive_wget() {
+    local file_id="$1"
+    local output_file="$2"
+    
+    log "Attempting download with wget method..."
+    
+    # First attempt - direct download
+    wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \
+        "https://docs.google.com/uc?export=download&id=$file_id" -O- | \
+        sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p' > /tmp/confirm.txt
+    
+    local confirm=$(cat /tmp/confirm.txt)
+    
+    if [ -n "$confirm" ]; then
+        # Large file - needs confirmation
+        wget --load-cookies /tmp/cookies.txt \
+            "https://docs.google.com/uc?export=download&confirm=$confirm&id=$file_id" \
+            -O "$output_file" || return 1
+    else
+        # Small file - direct download
+        wget "https://docs.google.com/uc?export=download&id=$file_id" -O "$output_file" || return 1
+    fi
+    
+    rm -f /tmp/cookies.txt /tmp/confirm.txt
+    return 0
+}
+
 # Function to download file from Google Drive with progress
 download_from_google_drive() {
     local file_id="$1"
@@ -364,13 +392,56 @@ download_from_google_drive() {
     
     log "Downloading from Google Drive (ID: $file_id)..."
     
-    # Install gdown if not present
+    # First try with gdown
     if ! command_exists gdown; then
-        pip install --user gdown
+        log "Installing gdown..."
+        pip install --user gdown >/dev/null 2>&1
+        # Add local bin to PATH for this session
+        export PATH="$HOME/.local/bin:$PATH"
     fi
     
-    ~/.local/bin/gdown --id "$file_id" -O "$output_file" || return 1
-    return 0
+    # Try gdown first
+    if command_exists gdown || [ -f "$HOME/.local/bin/gdown" ]; then
+        log "Attempting download with gdown..."
+        if gdown "$file_id" -O "$output_file" --fuzzy 2>/dev/null || \
+           "$HOME/.local/bin/gdown" "$file_id" -O "$output_file" --fuzzy 2>/dev/null; then
+            # Verify it's a valid ZIP
+            if [ -f "$output_file" ] && file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive"; then
+                log "Download successful with gdown"
+                return 0
+            else
+                warning "gdown download failed or file is not a valid archive"
+                rm -f "$output_file"
+            fi
+        fi
+    fi
+    
+    # If gdown failed, try wget method
+    log "Trying alternative download method..."
+    if download_google_drive_wget "$file_id" "$output_file"; then
+        # Verify the downloaded file
+        if [ -f "$output_file" ]; then
+            if file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive"; then
+                log "Download successful with wget method"
+                return 0
+            else
+                # Check if it's an HTML error page
+                if head -n 1 "$output_file" | grep -q "<!DOCTYPE html"; then
+                    error "Downloaded file is an HTML error page, not the expected archive"
+                    error "This usually means the file ID is incorrect or the file requires manual download"
+                    error "Please download the file manually and place it in the correct location"
+                else
+                    error "Downloaded file is not a valid archive"
+                fi
+                rm -f "$output_file"
+                return 1
+            fi
+        fi
+    fi
+    
+    error "Failed to download file from Google Drive"
+    error "Please verify the file ID is correct or download manually"
+    return 1
 }
 
 # Start setup
