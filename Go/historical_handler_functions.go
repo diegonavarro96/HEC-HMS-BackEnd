@@ -337,7 +337,7 @@ func runHMSPipelineHistorical(ctx context.Context, req HistoricalDownloadRequest
 	err = executeBatchFile(ctx,
 		GetJythonBatchScriptPath("MergeGRIBFilesRealTimePass2Batch.bat"),
 		absOutputDir,
-		"", // Empty string for shapefile_path to use default
+		AppConfig.Paths.ShapefilePath, // Use configured shapefile path
 		outputDSS,
 	)
 

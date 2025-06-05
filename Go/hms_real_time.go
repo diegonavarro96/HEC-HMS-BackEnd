@@ -695,7 +695,7 @@ func RunProcessingPipeline(ctx context.Context, optionalDateYYYYMMDD string, opt
 				// Pass the arguments as separate elements
 				return []string{
 					GetGribDownloadPath(dateToUse),
-					"", // Empty string for shapefile_path to use default
+					AppConfig.Paths.ShapefilePath, // Use configured shapefile path
 					GetDSSPath("RainfallRealTimePass2.dss"),
 				}
 			},
