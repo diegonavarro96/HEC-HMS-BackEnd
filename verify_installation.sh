@@ -12,6 +12,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Script variables
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$SCRIPT_DIR"  # Assuming script is in project root
+
 # Functions
 check_ok() {
     echo -e "${GREEN}✓${NC} $1"
@@ -48,16 +52,25 @@ echo "------------------------------"
 if command -v java >/dev/null 2>&1; then
     JAVA_VERSION=$(java -version 2>&1 | head -n 1)
     check_ok "Java installed: $JAVA_VERSION"
+    
+    # Check if Java 8 is the default
+    if java -version 2>&1 | grep -q "1.8.0"; then
+        check_ok "Java 8 is the default version"
+    else
+        check_warn "Java 8 is not the default (HMS requires Java 8)"
+    fi
 else
     check_fail "Java not found"
 fi
 
-# Check Java 17
-if [ -f "/usr/lib/jvm/java-17-openjdk-amd64/bin/java" ]; then
-    check_ok "Java 17 installed"
-else
-    check_fail "Java 17 not found"
-fi
+# Check all Java versions installed
+for ver in 8 11 17; do
+    if [ -d "/usr/lib/jvm/java-${ver}-openjdk-amd64" ]; then
+        check_ok "Java $ver installed"
+    else
+        check_warn "Java $ver not found"
+    fi
+done
 
 # Check Go
 if command -v go >/dev/null 2>&1; then
@@ -138,7 +151,7 @@ echo ""
 echo "Checking Project Structure..."
 echo "-----------------------------"
 
-PROJECT_DIR="$HOME/hms-backend"
+# PROJECT_DIR is already set at the top of the script
 
 if [ -d "$PROJECT_DIR" ]; then
     check_ok "Project directory exists: $PROJECT_DIR"
@@ -153,7 +166,10 @@ if [ -d "$PROJECT_DIR" ]; then
         "gis_data/shapefiles"
         "logs"
         "JSON"
+        "CSV"
         "gribFiles"
+        "grb_downloads"
+        "data/cogs_output"
     )
     
     for dir in "${DIRS[@]}"; do
@@ -253,6 +269,42 @@ if [ -d "$PROJECT_DIR" ]; then
 fi
 
 echo ""
+echo "Checking AWS Deployment (if applicable)..."
+echo "------------------------------------------"
+
+# Check if nginx is installed and configured
+if command -v nginx >/dev/null 2>&1; then
+    check_ok "Nginx installed"
+    
+    if [ -f "/etc/nginx/sites-available/hms-backend" ]; then
+        check_ok "Nginx configuration for hms-backend exists"
+    else
+        info "No nginx configuration for hms-backend (not required for local deployment)"
+    fi
+else
+    info "Nginx not installed (not required for local deployment)"
+fi
+
+# Check if systemd service exists
+if [ -f "/etc/systemd/system/hms-backend.service" ]; then
+    check_ok "Systemd service installed"
+    
+    if systemctl is-enabled hms-backend >/dev/null 2>&1; then
+        check_ok "HMS Backend service is enabled"
+    else
+        check_warn "HMS Backend service is not enabled"
+    fi
+    
+    if systemctl is-active hms-backend >/dev/null 2>&1; then
+        check_ok "HMS Backend service is running"
+    else
+        info "HMS Backend service is not running"
+    fi
+else
+    info "Systemd service not installed (not required for local deployment)"
+fi
+
+echo ""
 echo "================================================================="
 echo "                    Verification Summary"
 echo "================================================================="
@@ -286,6 +338,10 @@ echo ""
 echo "4. Test HEC-HMS:"
 echo "   /opt/hms/hec-hms.sh -help"
 echo ""
+echo "5. Test API endpoints (when backend is running):"
+echo "   # Health check:"
+echo "   curl -k https://localhost:8443/health"
+echo ""
 
 if [ $WARNING_CHECKS -gt 0 ] || [ $FAILED_CHECKS -gt 0 ]; then
     echo "Troubleshooting Tips:"
@@ -297,15 +353,36 @@ if [ $WARNING_CHECKS -gt 0 ] || [ $FAILED_CHECKS -gt 0 ]; then
     
     if [ ! -f "$PROJECT_DIR/hms_models/RealTime/LeonCreek/LeonCreek.hms" ]; then
         echo "- Download HMS models from Google Drive and extract to hms_models/"
+        echo "  Use the setup script with Google Drive IDs for automatic download"
     fi
     
     if [ ! -f "$PROJECT_DIR/gis_data/shapefiles/Bexar_County.shp" ]; then
-        echo "- Download Bexar County shapefile and place in gis_data/shapefiles/"
+        echo "- Download Bexar County shapefile from Google Drive"
+        echo "  Use the setup script with Google Drive ID for automatic download"
     fi
     
     if [ ! -f "$PROJECT_DIR/Go/hms-backend" ]; then
         echo "- Build Go backend: cd $PROJECT_DIR/Go && go build -o hms-backend ."
     fi
     
+    if ! java -version 2>&1 | grep -q "1.8.0"; then
+        echo "- Set Java 8 as default: sudo update-alternatives --config java"
+    fi
+    
+    if [ ! -f "$PROJECT_DIR/Go/server.crt" ] || [ ! -f "$PROJECT_DIR/Go/server.key" ]; then
+        echo "- Generate SSL certificates: Run setup script step 13"
+    fi
+    
     echo ""
+fi
+
+# Additional tips for AWS deployment
+if [ -f "/etc/systemd/system/hms-backend.service" ]; then
+    echo ""
+    echo "AWS Deployment Commands:"
+    echo "------------------------"
+    echo "- Start service: sudo systemctl start hms-backend"
+    echo "- Stop service: sudo systemctl stop hms-backend"
+    echo "- View logs: sudo journalctl -u hms-backend -f"
+    echo "- Check status: sudo systemctl status hms-backend"
 fi

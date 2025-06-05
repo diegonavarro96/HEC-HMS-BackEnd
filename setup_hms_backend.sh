@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # HEC-HMS Backend Automated Setup Script for Ubuntu Linux
-# This script automates the deployment of HEC-HMS Backend on a fresh Ubuntu system
-# Designed to run on Ubuntu 20.04+ via SSH without GUI
+# This script automates the deployment of HEC-HMS Backend on AWS EC2 Ubuntu instances
+# Designed to run on Ubuntu 20.04+ for production deployment
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -21,20 +21,26 @@ PROJECT_NAME="hms-backend"
 PROJECT_DIR="$SCRIPT_DIR"  # Use current directory instead of ~/hms-backend
 LOG_FILE="$SCRIPT_DIR/setup_log_$(date +%Y%m%d_%H%M%S).log"
 
+# AWS deployment variables
+IS_AWS_DEPLOYMENT=false
+AWS_INSTANCE_DOMAIN=""
+LETSENCRYPT_EMAIL=""
+
 # Parse command line arguments
-SKIP_STEPS=""
-INTERACTIVE_MODE=false
 SHOW_HELP=false
-AUTO_DETECTED_SKIPS=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip)
-            shift
-            SKIP_STEPS="$1"
+        --aws)
+            IS_AWS_DEPLOYMENT=true
             ;;
-        --interactive|-i)
-            INTERACTIVE_MODE=true
+        --domain)
+            shift
+            AWS_INSTANCE_DOMAIN="$1"
+            ;;
+        --email)
+            shift
+            LETSENCRYPT_EMAIL="$1"
             ;;
         --help|-h)
             SHOW_HELP=true
@@ -51,14 +57,14 @@ done
 show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "HEC-HMS Backend Automated Setup Script"
+    echo "HEC-HMS Backend Automated Setup Script for AWS Deployment"
     echo ""
-    echo "This script automatically detects completed installation steps and skips them."
+    echo "This script will interactively ask whether to skip each step during installation."
     echo ""
     echo "OPTIONS:"
-    echo "  --skip STEPS        Skip specified steps (comma-separated list)"
-    echo "                      Example: --skip 1,3,5"
-    echo "  -i, --interactive   Interactive mode - select which steps to run"
+    echo "  --aws               Enable AWS deployment mode (configures for production)"
+    echo "  --domain DOMAIN     Set domain for SSL certificate (e.g., hms.example.com)"
+    echo "  --email EMAIL       Email for Let's Encrypt SSL certificate"
     echo "  -h, --help          Show this help message"
     echo ""
     echo "STEPS:"
@@ -69,7 +75,7 @@ show_help() {
     echo "  5  - Install Miniconda"
     echo "  6  - Create Conda environments"
     echo "  7  - Install Jython"
-    echo "  8  - Install HEC-HMS"
+    echo "  8  - Install HEC-HMS from Google Drive"
     echo "  9  - Setup project structure"
     echo "  10 - Download HMS models from Google Drive"
     echo "  11 - Fix script line endings"
@@ -80,29 +86,17 @@ show_help() {
     echo "  16 - Setup environment variables"
     echo "  17 - Create systemd service"
     echo ""
-    echo "Example:"
-    echo "  $0 --skip 2,5      # Skip Go and Miniconda installation"
-    echo "  $0 --interactive   # Choose steps interactively"
+    echo "AWS Deployment Example:"
+    echo "  $0 --aws --domain hms.example.com --email admin@example.com"
+    echo ""
+    echo "Standard Deployment Example:"
+    echo "  $0"
     exit 0
 }
 
 if $SHOW_HELP; then
     show_help
 fi
-
-# Convert skip steps to array
-IFS=',' read -ra SKIP_ARRAY <<< "$SKIP_STEPS"
-
-# Function to check if step should be skipped
-should_skip_step() {
-    local step_num=$1
-    for skip in "${SKIP_ARRAY[@]}"; do
-        if [[ "$skip" == "$step_num" ]]; then
-            return 0
-        fi
-    done
-    return 1
-}
 
 # Function to log messages
 log() {
@@ -142,6 +136,35 @@ prompt_with_default() {
 # Function to check command existence
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to ask if user wants to run a step
+ask_to_run_step() {
+    local step_name="$1"
+    local step_description="$2"
+    local auto_detected_complete="$3"
+    
+    echo ""
+    echo "================================================================="
+    echo " Step: $step_name"
+    echo "================================================================="
+    echo "Description: $step_description"
+    
+    if [ "$auto_detected_complete" = "true" ]; then
+        echo -e "${GREEN}✓ This step appears to be already completed${NC}"
+        read -p "Do you want to run it anyway? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            return 1  # Skip
+        fi
+    else
+        read -p "Do you want to run this step? (Y/n): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            return 1  # Skip
+        fi
+    fi
+    return 0  # Run
 }
 
 # Function to extract Google Drive ID from URL or return the ID if already in correct format
@@ -334,115 +357,36 @@ check_step_17_completed() {
     return 1
 }
 
-# Function to auto-detect completed steps
-auto_detect_completed_steps() {
-    log "Auto-detecting completed steps..."
-    local detected_skips=()
+# Function to download file from Google Drive with progress
+download_from_google_drive() {
+    local file_id="$1"
+    local output_file="$2"
     
-    for i in {1..17}; do
-        if check_step_${i}_completed; then
-            detected_skips+=("$i")
-        fi
-    done
+    log "Downloading from Google Drive (ID: $file_id)..."
     
-    if [ ${#detected_skips[@]} -gt 0 ]; then
-        AUTO_DETECTED_SKIPS=$(IFS=','; echo "${detected_skips[*]}")
-        info "Auto-detected completed steps: $AUTO_DETECTED_SKIPS"
-        
-        # Show which steps are already completed
-        echo ""
-        echo "The following steps appear to be already completed:"
-        for step in "${detected_skips[@]}"; do
-            case $step in
-                1) echo "  Step 1 - System dependencies (key packages installed)" ;;
-                2) echo "  Step 2 - Go 1.21 (already installed)" ;;
-                3) echo "  Step 3 - Java 8 configuration (already default)" ;;
-                4) echo "  Step 4 - PostgreSQL (database and user exist)" ;;
-                5) echo "  Step 5 - Miniconda (already installed)" ;;
-                6) echo "  Step 6 - Conda environments (already created)" ;;
-                7) echo "  Step 7 - Jython (already installed)" ;;
-                8) echo "  Step 8 - HEC-HMS (already installed)" ;;
-                9) echo "  Step 9 - Project structure (already exists)" ;;
-                10) echo "  Step 10 - HMS models (already downloaded)" ;;
-                12) echo "  Step 12 - Config files (already exist)" ;;
-                13) echo "  Step 13 - Database schema (tables exist)" ;;
-                14) echo "  Step 14 - Go backend (binary exists)" ;;
-                16) echo "  Step 16 - Environment variables (already set)" ;;
-                17) echo "  Step 17 - Systemd service (file exists)" ;;
-            esac
-        done
-        echo ""
-    else
-        info "No completed steps detected - this appears to be a fresh installation."
+    # Install gdown if not present
+    if ! command_exists gdown; then
+        pip install --user gdown
     fi
+    
+    ~/.local/bin/gdown --id "$file_id" -O "$output_file" || return 1
+    return 0
 }
-
-# Interactive mode - select steps
-if $INTERACTIVE_MODE; then
-    # Run auto-detection first
-    DB_PASSWORD="hms_secure_password_2024"  # Use default for detection
-    auto_detect_completed_steps
-    
-    echo "================================================================="
-    echo "   Interactive Mode - Select Steps to Run"
-    echo "================================================================="
-    echo ""
-    echo "Available steps:"
-    echo "  1  - Install system dependencies"
-    echo "  2  - Install Go"
-    echo "  3  - Configure Java"
-    echo "  4  - Setup PostgreSQL"
-    echo "  5  - Install Miniconda"
-    echo "  6  - Create Conda environments"
-    echo "  7  - Install Jython"
-    echo "  8  - Install HEC-HMS"
-    echo "  9  - Setup project structure"
-    echo "  10 - Download HMS models from Google Drive"
-    echo "  11 - Fix script line endings"
-    echo "  12 - Create configuration files"
-    echo "  13 - Setup database schema"
-    echo "  14 - Build Go backend"
-    echo "  15 - Set file permissions"
-    echo "  16 - Setup environment variables"
-    echo "  17 - Create systemd service"
-    echo ""
-    if [[ -n "$AUTO_DETECTED_SKIPS" ]]; then
-        echo "Auto-detected completed steps: $AUTO_DETECTED_SKIPS"
-        echo ""
-    fi
-    echo "Enter the steps you want to SKIP (comma-separated, or press Enter to run all):"
-    echo "(Auto-detected steps will be automatically included)"
-    read -p "Skip steps: " SKIP_INPUT
-    
-    # Merge with auto-detected skips
-    if [[ -n "$SKIP_INPUT" ]]; then
-        if [[ -n "$AUTO_DETECTED_SKIPS" ]]; then
-            SKIP_STEPS="$SKIP_INPUT,$AUTO_DETECTED_SKIPS"
-        else
-            SKIP_STEPS="$SKIP_INPUT"
-        fi
-    else
-        SKIP_STEPS="$AUTO_DETECTED_SKIPS"
-    fi
-    
-    # Remove duplicates and sort
-    if [[ -n "$SKIP_STEPS" ]]; then
-        SKIP_STEPS=$(echo "$SKIP_STEPS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-    fi
-    IFS=',' read -ra SKIP_ARRAY <<< "$SKIP_STEPS"
-fi
 
 # Start setup
 clear
 
-# Auto-detect completed steps before showing banner
-DB_PASSWORD="hms_secure_password_2024"  # Use default for detection
-auto_detect_completed_steps
-
 echo "================================================================="
-echo "   HEC-HMS Backend Automated Setup Script for Ubuntu Linux"
+echo "   HEC-HMS Backend Automated Setup Script"
 echo "================================================================="
 echo ""
+
+if $IS_AWS_DEPLOYMENT; then
+    echo -e "${BLUE}AWS Deployment Mode Enabled${NC}"
+    echo "Domain: ${AWS_INSTANCE_DOMAIN:-Not specified}"
+    echo "Email: ${LETSENCRYPT_EMAIL:-Not specified}"
+    echo ""
+fi
 
 # Check not running as root
 check_not_root
@@ -452,108 +396,43 @@ touch "$LOG_FILE"
 log "Starting HEC-HMS Backend setup"
 log "Log file: $LOG_FILE"
 
-if [[ -n "$SKIP_STEPS" ]]; then
-    log "Skipping steps: $SKIP_STEPS"
+if $IS_AWS_DEPLOYMENT; then
+    log "AWS deployment mode enabled"
 fi
 
-# Prompt for critical information
+# Initial configuration gathering
 echo ""
-info "Setup Options:"
-echo ""
-
-# Merge auto-detected skips with command line skips
-if [[ -n "$AUTO_DETECTED_SKIPS" ]]; then
-    if [[ -n "$SKIP_STEPS" ]]; then
-        # Merge and remove duplicates
-        SKIP_STEPS="$SKIP_STEPS,$AUTO_DETECTED_SKIPS"
-        SKIP_STEPS=$(echo "$SKIP_STEPS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-    else
-        SKIP_STEPS="$AUTO_DETECTED_SKIPS"
-    fi
-    IFS=',' read -ra SKIP_ARRAY <<< "$SKIP_STEPS"
-fi
-
-# Ask if user wants to skip any steps
-if [[ -n "$SKIP_STEPS" ]]; then
-    echo "Steps to be skipped (from command line and auto-detection): $SKIP_STEPS"
-fi
-read -p "Do you want to skip any additional steps? (y/n): " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "Available steps to skip:"
-    echo "  1  - Install system dependencies"
-    echo "  2  - Install Go"
-    echo "  3  - Configure Java"
-    echo "  4  - Setup PostgreSQL"
-    echo "  5  - Install Miniconda"
-    echo "  6  - Create Conda environments"
-    echo "  7  - Install Jython"
-    echo "  8  - Install HEC-HMS"
-    echo "  9  - Setup project structure"
-    echo "  10 - Download HMS models from Google Drive"
-    echo "  11 - Fix script line endings"
-    echo "  12 - Create configuration files"
-    echo "  13 - Setup database schema"
-    echo "  14 - Build Go backend"
-    echo "  15 - Set file permissions"
-    echo "  16 - Setup environment variables"
-    echo "  17 - Create systemd service"
-    echo ""
-    read -p "Enter steps to skip (comma-separated, e.g., 1,5,10): " SKIP_INPUT
-    if [[ -n "$SKIP_INPUT" ]]; then
-        # Merge with existing skip steps if any
-        if [[ -n "$SKIP_STEPS" ]]; then
-            SKIP_STEPS="$SKIP_STEPS,$SKIP_INPUT"
-        else
-            SKIP_STEPS="$SKIP_INPUT"
-        fi
-        # Remove duplicates and sort
-        SKIP_STEPS=$(echo "$SKIP_STEPS" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-        IFS=',' read -ra SKIP_ARRAY <<< "$SKIP_STEPS"
-        log "Will skip steps: $SKIP_STEPS"
-    fi
-fi
-
-echo ""
-info "Please provide the following information:"
+info "Initial Configuration"
+echo "===================="
 echo ""
 
-# Only ask for PostgreSQL password if not skipping step 4
-if ! should_skip_step 4; then
-    DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
-else
-    DB_PASSWORD="skipped"
-fi
+# Gather critical information upfront
+DB_PASSWORD=$(prompt_with_default "PostgreSQL password for hms_user" "hms_secure_password_2024")
 
-# Only ask for Google Drive IDs if not skipping step 10
-if ! should_skip_step 10; then
-    info "You can paste either the Google Drive file ID or the full URL"
-    temp_id=$(prompt_with_default "Google Drive file ID or URL for RealTimeZip.zip" "")
-    GOOGLE_DRIVE_REALTIME_ID=$(extract_google_drive_id "$temp_id")
-    
-    temp_id=$(prompt_with_default "Google Drive file ID or URL for HistoricalZip.zip" "")
-    GOOGLE_DRIVE_HISTORICAL_ID=$(extract_google_drive_id "$temp_id")
-    
-    temp_id=$(prompt_with_default "Google Drive file ID or URL for Bexar_County_shapefile.zip" "")
-    GOOGLE_DRIVE_SHAPEFILE_ID=$(extract_google_drive_id "$temp_id")
-else
-    GOOGLE_DRIVE_REALTIME_ID=""
-    GOOGLE_DRIVE_HISTORICAL_ID=""
-    GOOGLE_DRIVE_SHAPEFILE_ID=""
-fi
+echo ""
+info "Google Drive Files Information"
+echo "You can paste either the Google Drive file ID or the full URL"
+echo ""
 
-# Only ask for HMS tar path if not skipping step 8
-if ! should_skip_step 8; then
-    HMS_TAR_PATH=$(prompt_with_default "Path to HEC-HMS Linux tar file (or 'download' to download)" "download")
-else
-    HMS_TAR_PATH=""
-fi
+temp_id=$(prompt_with_default "Google Drive file ID/URL for HEC-HMS ZIP file" "")
+HMS_GOOGLE_DRIVE_ID=$(extract_google_drive_id "$temp_id")
+
+temp_id=$(prompt_with_default "Google Drive file ID/URL for RealTime models ZIP" "")
+GOOGLE_DRIVE_REALTIME_ID=$(extract_google_drive_id "$temp_id")
+
+temp_id=$(prompt_with_default "Google Drive file ID/URL for Historical models ZIP" "")
+GOOGLE_DRIVE_HISTORICAL_ID=$(extract_google_drive_id "$temp_id")
+
+temp_id=$(prompt_with_default "Google Drive file ID/URL for Bexar County shapefile ZIP" "")
+GOOGLE_DRIVE_SHAPEFILE_ID=$(extract_google_drive_id "$temp_id")
 
 echo ""
 info "Setup will proceed with the following configuration:"
 echo "  Project Directory: $PROJECT_DIR"
 echo "  Database Password: [hidden]"
+if $IS_AWS_DEPLOYMENT; then
+    echo "  AWS Domain: ${AWS_INSTANCE_DOMAIN:-Will use self-signed certificates}"
+fi
 echo "  Log File: $LOG_FILE"
 echo ""
 read -p "Continue? (y/n): " -n 1 -r
@@ -563,41 +442,44 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # Step 1: System Dependencies
-if should_skip_step 1; then
-    log "Step 1: SKIPPED - Installing system dependencies"
-else
-    log "Step 1: Installing system dependencies"
+if ask_to_run_step "Step 1" "Install system dependencies (build tools, Java, PostgreSQL, GDAL, etc.)" "$(check_step_1_completed && echo true || echo false)"; then
+    log "Installing system dependencies..."
     
     log "Updating system packages..."
-    sudo apt update && sudo apt upgrade -y || error "Failed to update system packages"
-
-log "Installing basic dependencies..."
-sudo apt install -y \
-    build-essential \
-    curl \
-    wget \
-    git \
-    postgresql \
-    postgresql-contrib \
-    openjdk-8-jdk \
-    openjdk-11-jdk \
-    openjdk-17-jdk \
-    gdal-bin \
-    libgdal-dev \
-    python3-gdal \
-    dos2unix \
-    unzip \
-    tree \
-    openssl || error "Failed to install system dependencies"
+    sudo apt update || error "Failed to update package list"
+    
+    log "Installing basic dependencies..."
+    sudo apt install -y \
+        build-essential \
+        curl \
+        wget \
+        git \
+        postgresql \
+        postgresql-contrib \
+        openjdk-8-jdk \
+        openjdk-11-jdk \
+        openjdk-17-jdk \
+        gdal-bin \
+        libgdal-dev \
+        python3-gdal \
+        dos2unix \
+        unzip \
+        tree \
+        openssl \
+        python3-pip || error "Failed to install system dependencies"
+    
+    if $IS_AWS_DEPLOYMENT; then
+        log "Installing AWS-specific dependencies..."
+        sudo apt install -y certbot nginx || error "Failed to install AWS dependencies"
+    fi
+else
+    log "Skipping Step 1: System dependencies"
 fi
 
 # Step 2: Install Go
-if should_skip_step 2; then
-    log "Step 2: SKIPPED - Installing Go 1.21.5"
-else
-    log "Step 2: Installing Go 1.21.5"
+if ask_to_run_step "Step 2" "Install Go 1.21.5" "$(check_step_2_completed && echo true || echo false)"; then
+    log "Installing Go 1.21.5..."
     
-    if ! command_exists go || ! go version | grep -q "go1.21"; then
     wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz -O /tmp/go1.21.5.linux-amd64.tar.gz
     sudo rm -rf /usr/local/go
     sudo tar -C /usr/local -xzf /tmp/go1.21.5.linux-amd64.tar.gz
@@ -611,49 +493,50 @@ else
     rm /tmp/go1.21.5.linux-amd64.tar.gz
     log "Go installed successfully"
 else
-        log "Go is already installed"
-    fi
+    log "Skipping Step 2: Go installation"
 fi
 
 # Step 3: Configure Java
-if should_skip_step 3; then
-    log "Step 3: SKIPPED - Configuring Java alternatives"
-else
-    log "Step 3: Configuring Java alternatives"
+if ask_to_run_step "Step 3" "Configure Java 8 as default" "$(check_step_3_completed && echo true || echo false)"; then
+    log "Configuring Java alternatives..."
     
     # Set Java 8 as default
     sudo update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java || warning "Could not set Java 8 as default"
+    
+    # Verify Java version
+    java -version
+else
+    log "Skipping Step 3: Java configuration"
 fi
 
 # Step 4: PostgreSQL Setup
-if should_skip_step 4; then
-    log "Step 4: SKIPPED - Setting up PostgreSQL"
-else
-    log "Step 4: Setting up PostgreSQL"
-
-# Ensure PostgreSQL is running
-sudo service postgresql start || sudo systemctl start postgresql
-
-# Wait for PostgreSQL to be ready
-sleep 5
-
-# Create database and user
-log "Creating PostgreSQL database and user..."
-sudo -u postgres psql << EOF || warning "Database may already exist"
+if ask_to_run_step "Step 4" "Setup PostgreSQL database and user" "$(check_step_4_completed && echo true || echo false)"; then
+    log "Setting up PostgreSQL..."
+    
+    # Ensure PostgreSQL is running
+    sudo service postgresql start || sudo systemctl start postgresql
+    
+    # Wait for PostgreSQL to be ready
+    sleep 5
+    
+    # Create database and user
+    log "Creating PostgreSQL database and user..."
+    sudo -u postgres psql << EOF || warning "Database may already exist"
 CREATE USER hms_user WITH PASSWORD '$DB_PASSWORD';
 CREATE DATABASE hms_backend OWNER hms_user;
 GRANT ALL PRIVILEGES ON DATABASE hms_backend TO hms_user;
 \q
 EOF
+
+    log "PostgreSQL setup complete"
+else
+    log "Skipping Step 4: PostgreSQL setup"
 fi
 
 # Step 5: Install Miniconda
-if should_skip_step 5; then
-    log "Step 5: SKIPPED - Installing Miniconda"
-else
-    log "Step 5: Installing Miniconda"
-
-if [ ! -d "$HOME_DIR/miniconda3" ]; then
+if ask_to_run_step "Step 5" "Install Miniconda for Python environments" "$(check_step_5_completed && echo true || echo false)"; then
+    log "Installing Miniconda..."
+    
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
     bash /tmp/miniconda.sh -b -p "$HOME_DIR/miniconda3"
     rm /tmp/miniconda.sh
@@ -668,124 +551,126 @@ if [ ! -d "$HOME_DIR/miniconda3" ]; then
     
     log "Miniconda installed successfully"
 else
-    log "Miniconda already installed"
-    eval "$($HOME_DIR/miniconda3/bin/conda shell.bash hook)"
+    log "Skipping Step 5: Miniconda installation"
+    if [ -d "$HOME_DIR/miniconda3" ]; then
+        eval "$($HOME_DIR/miniconda3/bin/conda shell.bash hook)"
     fi
 fi
 
 # Step 6: Create Conda Environments
-if should_skip_step 6; then
-    log "Step 6: SKIPPED - Creating Conda environments"
-else
-    log "Step 6: Creating Conda environments"
-
-# Create hechmsfloodace environment
-if ! conda env list | grep -q "hechmsfloodace"; then
+if ask_to_run_step "Step 6" "Create conda environments (hechmsfloodace, grib2cog)" "$(check_step_6_completed && echo true || echo false)"; then
+    log "Creating Conda environments..."
+    
+    # Create hechmsfloodace environment
     log "Creating hechmsfloodace environment..."
     conda create -n hechmsfloodace python=3.10 -y
     conda run -n hechmsfloodace conda install -c conda-forge requests beautifulsoup4 watchdog pyyaml flask flask-cors -y
-else
-    log "hechmsfloodace environment already exists"
-fi
-
-# Create grib2cog environment
-if ! conda env list | grep -q "grib2cog"; then
+    
+    # Create grib2cog environment
     log "Creating grib2cog environment..."
     conda create -n grib2cog python=3.10 -y
     conda run -n grib2cog conda install -c conda-forge xarray rioxarray cfgrib eccodes -y
+    
+    log "Conda environments created successfully"
 else
-        log "grib2cog environment already exists"
-    fi
+    log "Skipping Step 6: Conda environment creation"
 fi
 
 # Step 7: Install Jython
-if should_skip_step 7; then
-    log "Step 7: SKIPPED - Installing Jython"
-else
-    log "Step 7: Installing Jython"
-
-if [ ! -f "/opt/jython.jar" ]; then
+if ask_to_run_step "Step 7" "Install Jython for HEC-DSSVue integration" "$(check_step_7_completed && echo true || echo false)"; then
+    log "Installing Jython..."
+    
     wget https://repo1.maven.org/maven2/org/python/jython-standalone/2.7.3/jython-standalone-2.7.3.jar -O /tmp/jython.jar
     sudo mkdir -p /opt
     sudo mv /tmp/jython.jar /opt/jython.jar
     sudo chmod 755 /opt/jython.jar
-    log "Jython installed successfully"
-else
-    log "Jython already installed"
-fi
-
+    
     # Test Jython
     java -jar /opt/jython.jar --version || warning "Jython test failed"
+    
+    log "Jython installed successfully"
+else
+    log "Skipping Step 7: Jython installation"
 fi
 
 # Step 8: Install HEC-HMS
-if should_skip_step 8; then
-    log "Step 8: SKIPPED - Installing HEC-HMS"
-else
-    log "Step 8: Installing HEC-HMS"
-
-if [ ! -d "/opt/hms" ]; then
-    if [ "$HMS_TAR_PATH" = "download" ]; then
-        # Download HEC-HMS 4.12
-        log "Downloading HEC-HMS 4.12..."
-        wget https://github.com/HydrologicEngineeringCenter/hec-downloads/releases/download/1.0.32/HEC-HMS-4.12-linux64.tar.gz -O /tmp/hec-hms.tar.gz || error "Failed to download HEC-HMS"
-        HMS_TAR_PATH="/tmp/hec-hms.tar.gz"
-    fi
+if ask_to_run_step "Step 8" "Install HEC-HMS from Google Drive" "$(check_step_8_completed && echo true || echo false)"; then
+    log "Installing HEC-HMS..."
     
-    if [ -f "$HMS_TAR_PATH" ]; then
+    if [ -n "$HMS_GOOGLE_DRIVE_ID" ]; then
+        log "Downloading HEC-HMS from Google Drive..."
+        download_from_google_drive "$HMS_GOOGLE_DRIVE_ID" "/tmp/hms.zip" || error "Failed to download HEC-HMS"
+        
+        log "Extracting HEC-HMS..."
+        # First extract to temp location to check structure
+        mkdir -p /tmp/hms_extract
+        unzip -q /tmp/hms.zip -d /tmp/hms_extract/
+        
+        # Check the structure and move appropriately
         sudo mkdir -p /opt/hms
-        sudo tar -xf "$HMS_TAR_PATH" -C /opt/hms --strip-components=1
+        
+        # Case 1: If there's a single directory in the extract (e.g., HEC-HMS-4.12)
+        if [ $(ls -1 /tmp/hms_extract | wc -l) -eq 1 ] && [ -d "/tmp/hms_extract/$(ls -1 /tmp/hms_extract)" ]; then
+            # Move contents of that directory to /opt/hms
+            sudo mv /tmp/hms_extract/*/* /opt/hms/ 2>/dev/null || true
+        else
+            # Case 2: Files are directly in the zip
+            sudo mv /tmp/hms_extract/* /opt/hms/ 2>/dev/null || true
+        fi
+        
+        # Clean up temp directory
+        rm -rf /tmp/hms_extract
+        
+        # Ensure proper permissions
         sudo chmod -R 755 /opt/hms
+        sudo chmod +x /opt/hms/hec-hms.sh
+        
+        rm /tmp/hms.zip
+        
+        # Test HEC-HMS
+        /opt/hms/hec-hms.sh -help >/dev/null 2>&1 || warning "HEC-HMS test failed (this is normal for headless systems)"
+        
         log "HEC-HMS installed successfully"
     else
-        error "HEC-HMS tar file not found at: $HMS_TAR_PATH"
+        warning "HEC-HMS Google Drive ID not provided. Please manually install HEC-HMS to /opt/hms"
     fi
 else
-    log "HEC-HMS already installed"
-fi
-
-    # Test HEC-HMS
-    /opt/hms/hec-hms.sh -help >/dev/null 2>&1 || warning "HEC-HMS test failed"
+    log "Skipping Step 8: HEC-HMS installation"
 fi
 
 # Step 9: Setup Project Structure
-if should_skip_step 9; then
-    log "Step 9: SKIPPED - Setting up project structure"
+if ask_to_run_step "Step 9" "Create project directory structure" "$(check_step_9_completed && echo true || echo false)"; then
+    log "Setting up project structure..."
+    
+    # Create required directories in current location
+    log "Creating required directories..."
+    mkdir -p hms_models/LeonCreek/{Rainfall,dssArchive}
+    mkdir -p hms_models/RealTime/LeonCreek/{Rainfall,dssArchive}
+    mkdir -p hms_models/Historical/LeonCreek
+    mkdir -p grb_downloads
+    mkdir -p data/cogs_output
+    mkdir -p gis_data/shapefiles
+    mkdir -p dss_files/incoming
+    mkdir -p logs
+    mkdir -p CSV
+    mkdir -p JSON
+    mkdir -p gribFiles/{historical,realtime}
+    mkdir -p temp
+    
+    cd "$PROJECT_DIR"
+    log "Project structure created successfully"
 else
-    log "Step 9: Setting up project structure"
-
-# Create required directories in current location
-log "Creating required directories..."
-mkdir -p hms_models/LeonCreek/{Rainfall,dssArchive}
-mkdir -p hms_models/RealTime/LeonCreek/{Rainfall,dssArchive}
-mkdir -p hms_models/Historical/LeonCreek
-mkdir -p grb_downloads
-mkdir -p data/cogs_output
-mkdir -p gis_data/shapefiles
-mkdir -p dss_files/incoming
-mkdir -p logs
-mkdir -p CSV
-mkdir -p JSON
-mkdir -p gribFiles/{historical,realtime}
-mkdir -p temp
-
-cd "$PROJECT_DIR"
+    log "Skipping Step 9: Project structure setup"
 fi
 
 # Step 10: Download HMS Models from Google Drive
-if should_skip_step 10; then
-    log "Step 10: SKIPPED - Downloading HMS models from Google Drive"
-else
-    log "Step 10: Downloading HMS models from Google Drive"
-
-# Install gdown
-pip install --user gdown
-
-if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] && [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; then
+if ask_to_run_step "Step 10" "Download HMS models and shapefiles from Google Drive" "$(check_step_10_completed && echo true || echo false)"; then
+    log "Downloading HMS models from Google Drive..."
+    
     # Download RealTime model
-    if [ ! -d "hms_models/RealTime/LeonCreek/LeonCreek.hms" ]; then
+    if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ]; then
         log "Downloading RealTime HMS model..."
-        ~/.local/bin/gdown --id "$GOOGLE_DRIVE_REALTIME_ID" -O RealTimeZip.zip || warning "Failed to download RealTime model"
+        download_from_google_drive "$GOOGLE_DRIVE_REALTIME_ID" "RealTimeZip.zip" || warning "Failed to download RealTime model"
         
         if [ -f "RealTimeZip.zip" ]; then
             log "Extracting RealTime HMS model..."
@@ -793,10 +678,10 @@ if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] && [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; t
             unzip -q RealTimeZip.zip -d temp_realtime/
             cd temp_realtime
             
-            # Find and extract any ZIP files in the extracted content
+            # Find and extract any nested ZIP files
             for zipfile in *.zip; do
                 if [ -f "$zipfile" ]; then
-                    log "Extracting $zipfile..."
+                    log "Extracting nested $zipfile..."
                     unzip -q "$zipfile"
                 fi
             done
@@ -813,12 +698,14 @@ if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] && [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; t
             cd ..
             rm -rf temp_realtime RealTimeZip.zip
         fi
+    else
+        warning "RealTime model Google Drive ID not provided"
     fi
     
     # Download Historical model
-    if [ ! -d "hms_models/Historical/LeonCreek/LeonCreek.hms" ]; then
+    if [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; then
         log "Downloading Historical HMS model..."
-        ~/.local/bin/gdown --id "$GOOGLE_DRIVE_HISTORICAL_ID" -O HistoricalZip.zip || warning "Failed to download Historical model"
+        download_from_google_drive "$GOOGLE_DRIVE_HISTORICAL_ID" "HistoricalZip.zip" || warning "Failed to download Historical model"
         
         if [ -f "HistoricalZip.zip" ]; then
             log "Extracting Historical HMS model..."
@@ -826,10 +713,10 @@ if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] && [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; t
             unzip -q HistoricalZip.zip -d temp_historical/
             cd temp_historical
             
-            # Find and extract any ZIP files in the extracted content
+            # Find and extract any nested ZIP files
             for zipfile in *.zip; do
                 if [ -f "$zipfile" ]; then
-                    log "Extracting $zipfile..."
+                    log "Extracting nested $zipfile..."
                     unzip -q "$zipfile"
                 fi
             done
@@ -846,151 +733,203 @@ if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] && [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ]; t
             cd ..
             rm -rf temp_historical HistoricalZip.zip
         fi
+    else
+        warning "Historical model Google Drive ID not provided"
     fi
-else
-    warning "Google Drive IDs not provided. Please manually download HMS models."
-fi
-
-# Download shapefile
-if [ -n "$GOOGLE_DRIVE_SHAPEFILE_ID" ]; then
-    if [ ! -f "gis_data/shapefiles/Bexar_County.shp" ]; then
+    
+    # Download shapefile
+    if [ -n "$GOOGLE_DRIVE_SHAPEFILE_ID" ]; then
         log "Downloading shapefile..."
-        ~/.local/bin/gdown --id "$GOOGLE_DRIVE_SHAPEFILE_ID" -O Bexar_County_shapefile.zip || warning "Failed to download shapefile"
+        download_from_google_drive "$GOOGLE_DRIVE_SHAPEFILE_ID" "Bexar_County_shapefile.zip" || warning "Failed to download shapefile"
         
         if [ -f "Bexar_County_shapefile.zip" ]; then
             mkdir -p gis_data/shapefiles/
             unzip -q Bexar_County_shapefile.zip -d gis_data/shapefiles/
             rm Bexar_County_shapefile.zip
+            log "Shapefile extracted successfully"
         fi
+    else
+        warning "Shapefile Google Drive ID not provided"
     fi
 else
-        warning "Shapefile Google Drive ID not provided. Please manually download shapefile."
-    fi
+    log "Skipping Step 10: HMS model downloads"
 fi
 
 # Step 11: Fix Script Line Endings
-if should_skip_step 11; then
-    log "Step 11: SKIPPED - Fixing script line endings"
-else
-    log "Step 11: Fixing script line endings"
+if ask_to_run_step "Step 11" "Fix script line endings and permissions" "false"; then
+    log "Fixing script line endings..."
     
     find . -name "*.sh" -type f -exec dos2unix {} + 2>/dev/null || true
     find . -name "*.sh" -type f -exec chmod +x {} + || true
+    
+    log "Script line endings fixed"
+else
+    log "Skipping Step 11: Line ending fixes"
 fi
 
 # Step 12: Create Configuration Files
-if should_skip_step 12; then
-    log "Step 12: SKIPPED - Creating configuration files"
-else
-    log "Step 12: Creating configuration files"
-
-# Create .env file for Go
-cat > "$PROJECT_DIR/Go/.env" << EOF
+if ask_to_run_step "Step 12" "Create configuration files (.env and config.yaml)" "$(check_step_12_completed && echo true || echo false)"; then
+    log "Creating configuration files..."
+    
+    # Create .env file for Go
+    cat > "$PROJECT_DIR/Go/.env" << EOF
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=hms_user
 DB_PASSWORD=$DB_PASSWORD
 DB_NAME=hms_backend
 EOF
-
-# Create or update Go config.yaml with correct paths
-if [ -f "$PROJECT_DIR/Go/config.example.yaml" ]; then
-    log "Creating config.yaml from config.example.yaml with Linux paths..."
     
-    # Copy the example config and update the paths for Linux
-    cp "$PROJECT_DIR/Go/config.example.yaml" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update Windows paths to Linux paths using sed
-    sed -i "s|hms_models_dir: \".*\"|hms_models_dir: \"$PROJECT_DIR/hms_models\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|grib_files_dir: \".*\"|grib_files_dir: \"../gribFiles\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|dss_archive_dir: \".*\"|dss_archive_dir: \"$PROJECT_DIR/hms_models/RealTime/LeonCreek/dssArchive\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|grb_downloads_dir: \".*\"|grb_downloads_dir: \"$PROJECT_DIR/grb_downloads\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|shapefile_path: \".*\"|shapefile_path: \"$PROJECT_DIR/gis_data/shapefiles/Bexar_County.shp\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|hms_historical_models_dir: \".*\"|hms_historical_models_dir: \"$PROJECT_DIR/hms_models/Historical\"|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update Python paths - handle both ${USER} variable and actual username
-    sed -i "s|hms_env_path: \".*\"|hms_env_path: \"$HOME_DIR/miniconda3/envs/hechmsfloodace/bin/python\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|grib2cog_env_path: \".*\"|grib2cog_env_path: \"$HOME_DIR/miniconda3/envs/grib2cog/bin/python\"|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update Jython paths
-    sed -i "s|executable_path: \".*jython.*\"|executable_path: \"java -jar /opt/jython.jar\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|batch_scripts_dir: \".*\"|batch_scripts_dir: \"$PROJECT_DIR/python_scripts/Jython_Scripts/batchScripts\"|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update HMS paths - handle both HEC-HMS and hec-hms patterns
-    sed -i "s|executable_path: \".*HEC-HMS.*\"|executable_path: \"/opt/hms/hec-hms.sh\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|executable_path: \".*hec-hms.*\"|executable_path: \"/opt/hms/hec-hms.sh\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|realtime_control_file: \".*\"|realtime_control_file: \"$PROJECT_DIR/hms_models/RealTime/LeonCreek/RainRealTime.control\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|historical_control_file: \".*\"|historical_control_file: \"$PROJECT_DIR/hms_models/Historical/LeonCreek/RainHistorical.control\"|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update Leon Creek model paths
-    sed -i "s|rainfall_dir: \".*\"|rainfall_dir: \"$PROJECT_DIR/hms_models/RealTime/LeonCreek/Rainfall\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|realtime_dss: \".*\"|realtime_dss: \"$PROJECT_DIR/hms_models/RealTime/LeonCreek/RainrealTime.dss\"|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|historical_dss: \".*\"|historical_dss: \"$PROJECT_DIR/hms_models/Historical/LeonCreek/RainHistorical.dss\"|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    # Update files_to_delete paths - handle both Windows and WSL/mounted paths
-    sed -i "s|\"D:/.*LeonCreek/Rainfall/|\"$PROJECT_DIR/hms_models/RealTime/LeonCreek/Rainfall/|g" "$PROJECT_DIR/Go/config.yaml"
-    sed -i "s|\"/mnt/.*/LeonCreek/Rainfall/|\"$PROJECT_DIR/hms_models/RealTime/LeonCreek/Rainfall/|g" "$PROJECT_DIR/Go/config.yaml"
-    
-    log "config.yaml created successfully with Linux paths"
-elif [ -f "$PROJECT_DIR/Go/config.yaml" ]; then
-    log "config.yaml already exists, skipping creation"
-else
-    warning "Neither config.yaml nor config.example.yaml found in Go directory"
+    # Create config.yaml from config.example.yaml
+    if [ -f "$PROJECT_DIR/Go/config.example.yaml" ]; then
+        log "Creating config.yaml from config.example.yaml..."
+        
+        # Copy the example config - it already has relative paths!
+        cp "$PROJECT_DIR/Go/config.example.yaml" "$PROJECT_DIR/Go/config.yaml"
+        
+        # Only update the system-specific paths that need to be absolute
+        # Update Python paths
+        sed -i "s|hms_env_path: \".*\"|hms_env_path: \"$HOME_DIR/miniconda3/envs/hechmsfloodace/bin/python\"|g" "$PROJECT_DIR/Go/config.yaml"
+        sed -i "s|grib2cog_env_path: \".*\"|grib2cog_env_path: \"$HOME_DIR/miniconda3/envs/grib2cog/bin/python\"|g" "$PROJECT_DIR/Go/config.yaml"
+        
+        # Update server settings for AWS deployment
+        if $IS_AWS_DEPLOYMENT; then
+            sed -i "s|port: \".*\"|port: \"443\"|g" "$PROJECT_DIR/Go/config.yaml"
+            sed -i "s|environment: \".*\"|environment: \"production\"|g" "$PROJECT_DIR/Go/config.yaml"
+            
+            # Add AWS domain to allowed origins if specified
+            if [ -n "$AWS_INSTANCE_DOMAIN" ]; then
+                # Add the domain to allowed_origins in CORS section
+                sed -i "/allowed_origins:/a\    - \"https://$AWS_INSTANCE_DOMAIN\"" "$PROJECT_DIR/Go/config.yaml"
+            fi
+        fi
+        
+        log "config.yaml created successfully"
+    else
+        error "config.example.yaml not found in Go directory"
     fi
+else
+    log "Skipping Step 12: Configuration file creation"
 fi
 
-# Step 13: Setup Database
-if should_skip_step 13; then
-    log "Step 13: SKIPPED - Setting up database schema"
-else
-    log "Step 13: Setting up database schema"
-
-cd "$PROJECT_DIR/Go"
-
-if [ -f "sql/schema.sql" ]; then
-    PGPASSWORD="$DB_PASSWORD" psql -U hms_user -h localhost -d hms_backend -f sql/schema.sql || warning "Database schema may already exist"
-fi
-
-# Generate SSL certificates
-if [ ! -f "server.crt" ]; then
-    log "Generating SSL certificates..."
-    openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 -nodes \
-        -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=localhost"
+# Step 13: Setup Database and SSL Certificates
+if ask_to_run_step "Step 13" "Setup database schema and SSL certificates" "$(check_step_13_completed && echo true || echo false)"; then
+    log "Setting up database schema..."
+    
+    cd "$PROJECT_DIR/Go"
+    
+    if [ -f "sql/schema.sql" ]; then
+        PGPASSWORD="$DB_PASSWORD" psql -U hms_user -h localhost -d hms_backend -f sql/schema.sql || warning "Database schema may already exist"
     fi
+    
+    # Generate SSL certificates
+    if [ ! -f "server.crt" ]; then
+        if $IS_AWS_DEPLOYMENT && [ -n "$AWS_INSTANCE_DOMAIN" ] && [ -n "$LETSENCRYPT_EMAIL" ]; then
+            log "Setting up Let's Encrypt certificate for $AWS_INSTANCE_DOMAIN..."
+            
+            # Configure nginx for certbot
+            sudo tee /etc/nginx/sites-available/hms-backend << EOF
+server {
+    listen 80;
+    server_name $AWS_INSTANCE_DOMAIN;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+EOF
+            
+            sudo ln -sf /etc/nginx/sites-available/hms-backend /etc/nginx/sites-enabled/
+            sudo mkdir -p /var/www/certbot
+            sudo nginx -t && sudo systemctl reload nginx
+            
+            # Obtain certificate
+            sudo certbot certonly --webroot -w /var/www/certbot -d $AWS_INSTANCE_DOMAIN --non-interactive --agree-tos -m $LETSENCRYPT_EMAIL
+            
+            # Copy certificates to project directory
+            sudo cp /etc/letsencrypt/live/$AWS_INSTANCE_DOMAIN/fullchain.pem "$PROJECT_DIR/Go/server.crt"
+            sudo cp /etc/letsencrypt/live/$AWS_INSTANCE_DOMAIN/privkey.pem "$PROJECT_DIR/Go/server.key"
+            sudo chown $USER:$USER "$PROJECT_DIR/Go/server.crt" "$PROJECT_DIR/Go/server.key"
+            
+            # Update nginx for HTTPS
+            sudo tee /etc/nginx/sites-available/hms-backend << EOF
+server {
+    listen 80;
+    server_name $AWS_INSTANCE_DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $AWS_INSTANCE_DOMAIN;
+    
+    ssl_certificate /etc/letsencrypt/live/$AWS_INSTANCE_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$AWS_INSTANCE_DOMAIN/privkey.pem;
+    
+    location / {
+        proxy_pass https://localhost:8443;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+            
+            sudo nginx -t && sudo systemctl reload nginx
+        else
+            log "Generating self-signed SSL certificates..."
+            openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 -nodes \
+                -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=localhost"
+        fi
+    fi
+    
+    log "Database and SSL setup complete"
+else
+    log "Skipping Step 13: Database and SSL setup"
 fi
 
 # Step 14: Build Go Backend
-if should_skip_step 14; then
-    log "Step 14: SKIPPED - Building Go backend"
-else
-    log "Step 14: Building Go backend"
+if ask_to_run_step "Step 14" "Build Go backend executable" "$(check_step_14_completed && echo true || echo false)"; then
+    log "Building Go backend..."
     
+    cd "$PROJECT_DIR/Go"
     go mod download || error "Failed to download Go dependencies"
     go build -o hms-backend . || error "Failed to build Go backend"
+    
+    log "Go backend built successfully"
+else
+    log "Skipping Step 14: Go backend build"
 fi
 
 # Step 15: Set Permissions
-if should_skip_step 15; then
-    log "Step 15: SKIPPED - Setting file permissions"
+if ask_to_run_step "Step 15" "Set file permissions" "false"; then
+    log "Setting file permissions..."
+    
+    cd "$PROJECT_DIR"
+    find . -type d -exec chmod 755 {} +
+    find . -type f -exec chmod 644 {} +
+    find . -name "*.sh" -type f -exec chmod +x {} +
+    if [ -f "Go/hms-backend" ]; then
+        chmod +x Go/hms-backend
+    fi
+    
+    log "File permissions set"
 else
-    log "Step 15: Setting file permissions"
-
-cd "$PROJECT_DIR"
-find . -type d -exec chmod 755 {} +
-find . -type f -exec chmod 644 {} +
-find . -name "*.sh" -type f -exec chmod +x {} +
-chmod +x Go/hms-backend
+    log "Skipping Step 15: File permissions"
 fi
 
 # Step 16: Environment Variables
-if should_skip_step 16; then
-    log "Step 16: SKIPPED - Setting up environment variables"
-else
-    log "Step 16: Setting up environment variables"
-
-# Add environment variables to bashrc if not already there
-if ! grep -q "HMS_HOME" ~/.bashrc; then
-    cat >> ~/.bashrc << EOF
+if ask_to_run_step "Step 16" "Setup environment variables" "$(check_step_16_completed && echo true || echo false)"; then
+    log "Setting up environment variables..."
+    
+    # Add environment variables to bashrc if not already there
+    if ! grep -q "HMS_HOME" ~/.bashrc; then
+        cat >> ~/.bashrc << EOF
 
 # HEC-HMS Backend Environment Variables
 export HMS_HOME=/opt/hms
@@ -998,15 +937,17 @@ export JYTHON_JAR=/opt/jython.jar
 export PATH=\$PATH:/usr/local/go/bin
 EOF
     fi
+    
+    log "Environment variables configured"
+else
+    log "Skipping Step 16: Environment variables"
 fi
 
-# Step 17: Create systemd service (optional)
-if should_skip_step 17; then
-    log "Step 17: SKIPPED - Creating systemd service file"
-else
-    log "Step 17: Creating systemd service file"
-
-cat > "$PROJECT_DIR/hms-backend.service" << EOF
+# Step 17: Create systemd service
+if ask_to_run_step "Step 17" "Create systemd service for auto-start" "$(check_step_17_completed && echo true || echo false)"; then
+    log "Creating systemd service file..."
+    
+    cat > "$PROJECT_DIR/hms-backend.service" << EOF
 [Unit]
 Description=HEC-HMS Backend Service
 After=network.target postgresql.service
@@ -1020,17 +961,28 @@ Restart=on-failure
 RestartSec=10
 StandardOutput=append:$PROJECT_DIR/logs/hms-backend.log
 StandardError=append:$PROJECT_DIR/logs/hms-backend-error.log
+Environment="PATH=/usr/local/go/bin:/usr/bin:/bin"
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-log "Systemd service file created at: $PROJECT_DIR/hms-backend.service"
-log "To install as a service, run:"
-log "  sudo cp $PROJECT_DIR/hms-backend.service /etc/systemd/system/"
-log "  sudo systemctl daemon-reload"
-log "  sudo systemctl enable hms-backend"
-log "  sudo systemctl start hms-backend"
+    
+    if $IS_AWS_DEPLOYMENT; then
+        log "Installing systemd service for AWS deployment..."
+        sudo cp "$PROJECT_DIR/hms-backend.service" /etc/systemd/system/
+        sudo systemctl daemon-reload
+        sudo systemctl enable hms-backend
+        log "Service installed and enabled. Start with: sudo systemctl start hms-backend"
+    else
+        log "Systemd service file created at: $PROJECT_DIR/hms-backend.service"
+        log "To install as a service, run:"
+        log "  sudo cp $PROJECT_DIR/hms-backend.service /etc/systemd/system/"
+        log "  sudo systemctl daemon-reload"
+        log "  sudo systemctl enable hms-backend"
+        log "  sudo systemctl start hms-backend"
+    fi
+else
+    log "Skipping Step 17: Systemd service creation"
 fi
 
 # Final Summary
@@ -1043,16 +995,38 @@ info "Installation Summary:"
 echo "  - Project Directory: $PROJECT_DIR"
 echo "  - Go Backend Binary: $PROJECT_DIR/Go/hms-backend"
 echo "  - Log File: $LOG_FILE"
+
+if $IS_AWS_DEPLOYMENT; then
+    echo ""
+    info "AWS Deployment Configuration:"
+    echo "  - Domain: ${AWS_INSTANCE_DOMAIN:-Self-signed certificates}"
+    echo "  - SSL: ${AWS_INSTANCE_DOMAIN:+Let's Encrypt}${AWS_INSTANCE_DOMAIN:-Self-signed}"
+    echo "  - Service: hms-backend (systemd)"
+fi
+
 echo ""
 info "Next Steps:"
-echo "  1. Review and update configuration files:"
+echo ""
+echo "  1. Review configuration:"
 echo "     - $PROJECT_DIR/Go/config.yaml"
-echo "     - HMS model paths in control files"
+echo "     - $PROJECT_DIR/Go/.env"
 echo ""
-echo "  2. Start the backend:"
-echo "     cd $PROJECT_DIR/Go"
-echo "     ./hms-backend"
-echo ""
+
+if $IS_AWS_DEPLOYMENT; then
+    echo "  2. Start the service:"
+    echo "     sudo systemctl start hms-backend"
+    echo "     sudo systemctl status hms-backend"
+    echo ""
+    echo "  3. View logs:"
+    echo "     tail -f $PROJECT_DIR/logs/hms-backend.log"
+    echo ""
+else
+    echo "  2. Start the backend:"
+    echo "     cd $PROJECT_DIR/Go"
+    echo "     ./hms-backend"
+    echo ""
+fi
+
 echo "  3. Test the pipelines:"
 echo "     # Historical Pipeline:"
 echo "     curl -k -X POST https://localhost:8443/api/run-hms-pipeline-historical \\"
@@ -1064,20 +1038,31 @@ echo "     curl -k -X POST https://localhost:8443/api/run-hms-pipeline \\"
 echo "       -H \"Content-Type: application/json\""
 echo ""
 
-if [[ -n "$AUTO_DETECTED_SKIPS" ]]; then
-    echo "  Note: The following steps were automatically skipped as they were already completed:"
-    echo "        $AUTO_DETECTED_SKIPS"
-    echo ""
-fi
+# Check for missing components
+missing_components=()
+[ -z "$HMS_GOOGLE_DRIVE_ID" ] && missing_components+=("HEC-HMS")
+[ -z "$GOOGLE_DRIVE_REALTIME_ID" ] && missing_components+=("RealTime HMS models")
+[ -z "$GOOGLE_DRIVE_HISTORICAL_ID" ] && missing_components+=("Historical HMS models")
+[ -z "$GOOGLE_DRIVE_SHAPEFILE_ID" ] && missing_components+=("Bexar County shapefile")
 
-if [ -n "$GOOGLE_DRIVE_REALTIME_ID" ] || [ -n "$GOOGLE_DRIVE_HISTORICAL_ID" ] || [ -n "$GOOGLE_DRIVE_SHAPEFILE_ID" ]; then
-    warning "Manual Steps Required:"
-    [ -z "$GOOGLE_DRIVE_REALTIME_ID" ] && echo "  - Download RealTime HMS model"
-    [ -z "$GOOGLE_DRIVE_HISTORICAL_ID" ] && echo "  - Download Historical HMS model"
-    [ -z "$GOOGLE_DRIVE_SHAPEFILE_ID" ] && echo "  - Download Bexar County shapefile"
-    echo "  - Update HMS model internal paths"
-    echo "  - Update config.yaml with correct paths"
+if [ ${#missing_components[@]} -gt 0 ]; then
+    warning "The following components were not downloaded (no Google Drive ID provided):"
+    for component in "${missing_components[@]}"; do
+        echo "  - $component"
+    done
+    echo ""
+    echo "Please download and install these components manually."
 fi
 
 echo ""
 log "Setup completed successfully!"
+
+# Run verification script if it exists
+if [ -f "$PROJECT_DIR/verify_installation.sh" ]; then
+    echo ""
+    read -p "Do you want to run the installation verification script? (Y/n): " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        bash "$PROJECT_DIR/verify_installation.sh"
+    fi
+fi
