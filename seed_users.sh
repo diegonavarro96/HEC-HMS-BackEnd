@@ -136,9 +136,9 @@ case $choice in
         ON CONFLICT DO NOTHING;"
         
         # Get organization IDs
-        FLOODACE_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'Floodace Corporation' LIMIT 1;" -t | tr -d ' ')
-        CITY_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'City of San Antonio' LIMIT 1;" -t | tr -d ' ')
-        TWDB_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'Texas Water Development Board' LIMIT 1;" -t | tr -d ' ')
+        FLOODACE_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'Floodace Corporation' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
+        CITY_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'City of San Antonio' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
+        TWDB_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = 'Texas Water Development Board' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
         
         # Create sample users
         execute_sql "
@@ -174,7 +174,7 @@ case $choice in
             read -p "Enter organization ID from the list above: " ORG_ID
             
             # Verify the organization exists
-            org_name=$(execute_sql "SELECT name FROM public.organizations WHERE id = $ORG_ID;" -t | tr -d ' ')
+            org_name=$(execute_sql "SELECT name FROM public.organizations WHERE id = $ORG_ID;" -t 2>/dev/null | grep -v '^$' | head -1)
             if [ -z "$org_name" ]; then
                 error "Organization with ID $ORG_ID not found!"
             fi
@@ -184,7 +184,7 @@ case $choice in
             read -p "Enter new organization name: " org_name
             
             # Check if organization already exists
-            existing_id=$(execute_sql "SELECT id FROM public.organizations WHERE name = '$org_name' LIMIT 1;" -t | tr -d ' ')
+            existing_id=$(execute_sql "SELECT id FROM public.organizations WHERE name = '$org_name' LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1 || echo "")
             
             if [ -n "$existing_id" ] && [ "$existing_id" != "" ]; then
                 warning "Organization '$org_name' already exists with ID: $existing_id"
@@ -198,7 +198,7 @@ case $choice in
             else
                 # Create new organization
                 execute_sql "INSERT INTO public.organizations (name) VALUES ('$org_name');"
-                ORG_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = '$org_name' ORDER BY id DESC LIMIT 1;" -t | tr -d ' ')
+                ORG_ID=$(execute_sql "SELECT id FROM public.organizations WHERE name = '$org_name' ORDER BY id DESC LIMIT 1;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1)
                 log "Organization '$org_name' created with ID: $ORG_ID"
             fi
         fi
@@ -288,8 +288,8 @@ log "Database seeding complete!"
 # Show summary
 echo ""
 info "Current database summary:"
-ORG_COUNT=$(execute_sql "SELECT COUNT(*) FROM public.organizations;" -t | tr -d ' ')
-USER_COUNT=$(execute_sql "SELECT COUNT(*) FROM public.\"Users\";" -t | tr -d ' ')
+ORG_COUNT=$(execute_sql "SELECT COUNT(*) FROM public.organizations;" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1 || echo "0")
+USER_COUNT=$(execute_sql "SELECT COUNT(*) FROM public.\"Users\";" -t 2>/dev/null | grep -E '^[0-9]+$' | head -1 || echo "0")
 echo "  Total organizations: $ORG_COUNT"
 echo "  Total users: $USER_COUNT"
 
