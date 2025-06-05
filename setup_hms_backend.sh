@@ -237,7 +237,7 @@ prompt_with_cache() {
     # Use cached value as default if available
     if [ -n "$cached_value" ]; then
         default="$cached_value"
-        echo -e "${GREEN}(Using cached value)${NC}"
+        echo -e "${GREEN}(Using cached value)${NC}" >&2  # Send to stderr to not interfere with return value
     fi
     
     read -p "$prompt [$default]: " response
