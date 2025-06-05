@@ -253,6 +253,9 @@ func main() {
 	e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
 	e.POST("/api/extract-historical-dss-data", handleExtractHistoricalDSSData)
 
+	// SMS endpoint
+	e.POST("/api/send-sms", handleSendSMS)
+
 	sugar.Infow("✨ Server starting",
 		"port", "\x1b[36m"+port+"\x1b[0m",
 		"tls", "\x1b[32mtrue\x1b[0m",

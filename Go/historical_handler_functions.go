@@ -422,9 +422,11 @@ func runExtractDSSDataJython(ctx context.Context) error {
 	// Paths
 	jythonPath := GetJythonPath()
 	scriptPath := GetPythonScriptPath("Jython_Scripts/extract_dss_data_historical.py")
+	dssPath := filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "RainHistorical.dss")
+	jsonOutputPath := GetJSONOutputPath("outputHistorical.json")
 
-	// Build command with no arguments (script extracts all junctions)
-	cmd := exec.CommandContext(ctx, jythonPath, scriptPath)
+	// Build command with DSS file and JSON output path arguments
+	cmd := exec.CommandContext(ctx, jythonPath, scriptPath, dssPath, jsonOutputPath)
 
 	// Run the command and capture output
 	output, err := cmd.CombinedOutput()

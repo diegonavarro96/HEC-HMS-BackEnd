@@ -10,13 +10,15 @@ from hec.heclib.util import HecTime
 # ---------------------------------------------------------------------------
 # ---- user-configurable constants ------------------------------------------
 # ---------------------------------------------------------------------------
-DSS_FILE_PATH  = r"D:\FloodaceDocuments\HMS\HMSBackend\hms_models\LeonCreek\RainHistorical.dss"
 TARGET_C_PART  = "FLOW"          # variable name
 TARGET_E_PART  = "1HOUR"         # time-step
 RUN_ID_TOKEN   = "RUN:RAINHISTORICAL"  # what the F-part must contain
-OUTPUT_JSON    = r"D:\FloodaceDocuments\HMS\HMSBackend\JSON\outputHistorical.json"
 TIMEZONE_LABEL = "UTC"           # whatever label your consumer expects
 UNITS_LABEL    = "cfs"           # adjust if your DSS units differ
+
+# Default paths (will be overridden by command line arguments)
+DEFAULT_DSS_PATH = "/home/diego/Documents/FloodaceDocuments/HEC-HMS-BackEnd/hms_models/LeonCreek/RainHistorical.dss"
+DEFAULT_OUTPUT_JSON = "/home/diego/Documents/FloodaceDocuments/HEC-HMS-BackEnd/JSON/outputHistorical.json"
 # ---------------------------------------------------------------------------
 
 def format_ht(ht_obj):
@@ -34,8 +36,25 @@ def format_ht(ht_obj):
     )
 
 def main():
-    print("Opening DSS file:", DSS_FILE_PATH)
-    dss = HecDss.open(DSS_FILE_PATH, True)  # read-only = True
+    # Parse command line arguments
+    if len(sys.argv) >= 3:
+        dss_file_path = sys.argv[1]
+        output_json = sys.argv[2]
+        print("Using provided DSS file:", dss_file_path)
+        print("Using provided output JSON:", output_json)
+    elif len(sys.argv) == 2:
+        dss_file_path = sys.argv[1]
+        output_json = DEFAULT_OUTPUT_JSON
+        print("Using provided DSS file:", dss_file_path)
+        print("Using default output JSON:", output_json)
+    else:
+        dss_file_path = DEFAULT_DSS_PATH
+        output_json = DEFAULT_OUTPUT_JSON
+        print("Using default DSS file:", dss_file_path)
+        print("Using default output JSON:", output_json)
+    
+    print("Opening DSS file:", dss_file_path)
+    dss = HecDss.open(dss_file_path, True)  # read-only = True
     try:
         catalog = dss.getCatalogedPathnames()
         if not catalog:
@@ -106,9 +125,9 @@ def main():
         # Write JSON
         # -------------------------------------------------------------------
         payload = { "series": series_array }
-        with open(OUTPUT_JSON, "w") as fp:
+        with open(output_json, "w") as fp:
             json.dump(payload, fp, indent=4)
-        print("JSON written to", OUTPUT_JSON)
+        print("JSON written to", output_json)
 
     finally:
         dss.close()
