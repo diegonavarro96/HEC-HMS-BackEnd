@@ -9,7 +9,7 @@ HMS_HOME="/opt/hms"
 JYTHON_JAR="/opt/jython.jar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JYTHON_SCRIPT="$(dirname "$SCRIPT_DIR")/MergeGRIBFilesRealTimePass2Jython.py"
-HEAP_GB=32  # Adjust heap size as needed
+HEAP_GB=8  # Adjust heap size as needed
 
 # Use HMS's Java for compatibility
 JAVA_EXEC="$HMS_HOME/jre/bin/java"
