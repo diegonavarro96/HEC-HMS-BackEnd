@@ -481,8 +481,8 @@ download_from_google_drive() {
         log "Attempting download with gdown..."
         if gdown "$file_id" -O "$output_file" --fuzzy 2>/dev/null || \
            "$HOME/.local/bin/gdown" "$file_id" -O "$output_file" --fuzzy 2>/dev/null; then
-            # Verify it's a valid ZIP
-            if [ -f "$output_file" ] && file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive"; then
+            # Verify it's a valid archive (ZIP, tar.gz, or JAR)
+            if [ -f "$output_file" ] && file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive|gzip compressed|tar archive"; then
                 log "Download successful with gdown"
                 return 0
             else
@@ -497,7 +497,7 @@ download_from_google_drive() {
     if download_google_drive_wget "$file_id" "$output_file"; then
         # Verify the downloaded file
         if [ -f "$output_file" ]; then
-            if file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive"; then
+            if file "$output_file" | grep -q -E "Zip archive|ZIP archive|Java archive|gzip compressed|tar archive"; then
                 log "Download successful with wget method"
                 return 0
             else
@@ -737,6 +737,10 @@ fi
 if ask_to_run_step "Step 6" "Create conda environments (hechmsfloodace, grib2cog)" "$(check_step_6_completed && echo true || echo false)"; then
     log "Creating Conda environments..."
     
+    # First, ensure system eccodes is installed
+    log "Installing system eccodes library..."
+    sudo apt-get install -y libeccodes-dev libeccodes-tools || warning "System eccodes installation failed"
+    
     # Create hechmsfloodace environment
     log "Creating hechmsfloodace environment..."
     conda create -n hechmsfloodace python=3.10 -y
@@ -746,28 +750,23 @@ if ask_to_run_step "Step 6" "Create conda environments (hechmsfloodace, grib2cog
     log "Creating grib2cog environment..."
     conda create -n grib2cog python=3.10 -y
     
-    # Update conda in the environment first
-    conda run -n grib2cog conda update -n base conda -y
-    
-    # Install packages step by step to avoid dependency conflicts
-    log "Installing xarray and rioxarray..."
-    conda run -n grib2cog conda install -c conda-forge xarray rioxarray -y
+    # Install packages step by step
+    log "Installing core packages for grib2cog..."
+    conda run -n grib2cog conda install -c conda-forge numpy pandas xarray rioxarray -y
     
     log "Installing GRIB processing packages..."
-    # Try installing eccodes and cfgrib with specific versions that work together
-    conda run -n grib2cog conda install -c conda-forge eccodes=2.31.0 -y || {
-        warning "Failed to install eccodes 2.31.0, trying latest version..."
-        conda run -n grib2cog conda install -c conda-forge eccodes -y
-    }
-    
-    # Install cfgrib after eccodes is installed
+    # For Linux, we'll use pip to install cfgrib which will use system eccodes
     conda run -n grib2cog pip install cfgrib || {
-        warning "Failed to install cfgrib with pip, trying conda..."
-        conda run -n grib2cog conda install -c conda-forge cfgrib -y || warning "cfgrib installation failed"
+        warning "Standard cfgrib installation failed, trying with eccodes-python..."
+        # Alternative: install eccodes-python first, then cfgrib
+        conda run -n grib2cog pip install eccodes-python || warning "eccodes-python installation failed"
+        conda run -n grib2cog pip install cfgrib || warning "cfgrib installation failed"
     }
     
-    # Install additional dependencies that might be needed
-    conda run -n grib2cog conda install -c conda-forge numpy pandas -y
+    # Verify installations
+    log "Verifying grib2cog environment..."
+    conda run -n grib2cog python -c "import xarray; import rioxarray; print('xarray and rioxarray OK')" || warning "xarray/rioxarray import failed"
+    conda run -n grib2cog python -c "import cfgrib; print('cfgrib OK')" || warning "cfgrib import failed"
     
     log "Conda environments created successfully"
 else
@@ -797,12 +796,22 @@ if ask_to_run_step "Step 8" "Install HEC-HMS from Google Drive" "$(check_step_8_
     
     if [ -n "$HMS_GOOGLE_DRIVE_ID" ]; then
         log "Downloading HEC-HMS from Google Drive..."
-        download_from_google_drive "$HMS_GOOGLE_DRIVE_ID" "/tmp/hms.zip" || error "Failed to download HEC-HMS"
+        download_from_google_drive "$HMS_GOOGLE_DRIVE_ID" "/tmp/hms_archive" || error "Failed to download HEC-HMS"
         
         log "Extracting HEC-HMS..."
         # First extract to temp location to check structure
         mkdir -p /tmp/hms_extract
-        unzip -q /tmp/hms.zip -d /tmp/hms_extract/
+        
+        # Check file type and extract accordingly
+        if file "/tmp/hms_archive" | grep -q -E "gzip compressed|tar archive"; then
+            log "Extracting tar.gz file..."
+            tar -xzf /tmp/hms_archive -C /tmp/hms_extract/
+        elif file "/tmp/hms_archive" | grep -q -E "Zip archive|ZIP archive"; then
+            log "Extracting ZIP file..."
+            unzip -q /tmp/hms_archive -d /tmp/hms_extract/
+        else
+            error "Unknown archive format for HEC-HMS file"
+        fi
         
         # Check the structure and move appropriately
         sudo mkdir -p /opt/hms
@@ -823,7 +832,7 @@ if ask_to_run_step "Step 8" "Install HEC-HMS from Google Drive" "$(check_step_8_
         sudo chmod -R 755 /opt/hms
         sudo chmod +x /opt/hms/hec-hms.sh
         
-        rm /tmp/hms.zip
+        rm /tmp/hms_archive
         
         # Test HEC-HMS
         /opt/hms/hec-hms.sh -help >/dev/null 2>&1 || warning "HEC-HMS test failed (this is normal for headless systems)"
