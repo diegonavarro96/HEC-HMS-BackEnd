@@ -745,7 +745,29 @@ if ask_to_run_step "Step 6" "Create conda environments (hechmsfloodace, grib2cog
     # Create grib2cog environment
     log "Creating grib2cog environment..."
     conda create -n grib2cog python=3.10 -y
-    conda run -n grib2cog conda install -c conda-forge xarray rioxarray cfgrib eccodes -y
+    
+    # Update conda in the environment first
+    conda run -n grib2cog conda update -n base conda -y
+    
+    # Install packages step by step to avoid dependency conflicts
+    log "Installing xarray and rioxarray..."
+    conda run -n grib2cog conda install -c conda-forge xarray rioxarray -y
+    
+    log "Installing GRIB processing packages..."
+    # Try installing eccodes and cfgrib with specific versions that work together
+    conda run -n grib2cog conda install -c conda-forge eccodes=2.31.0 -y || {
+        warning "Failed to install eccodes 2.31.0, trying latest version..."
+        conda run -n grib2cog conda install -c conda-forge eccodes -y
+    }
+    
+    # Install cfgrib after eccodes is installed
+    conda run -n grib2cog pip install cfgrib || {
+        warning "Failed to install cfgrib with pip, trying conda..."
+        conda run -n grib2cog conda install -c conda-forge cfgrib -y || warning "cfgrib installation failed"
+    }
+    
+    # Install additional dependencies that might be needed
+    conda run -n grib2cog conda install -c conda-forge numpy pandas -y
     
     log "Conda environments created successfully"
 else
