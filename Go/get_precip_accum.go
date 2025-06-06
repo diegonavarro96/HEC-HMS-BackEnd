@@ -25,18 +25,28 @@ import (
 // FetchLatestQPE fetches the latest QPE GRIB file from the MRMS source,
 // decompressing it and saving it locally.
 // It returns the path to the saved GRIB file or an error.
-func FetchLatestQPE(ctx context.Context) (string, error) {
-	// mrmsDataSourceURL is a package-level var set in main.go
-	if mrmsDataSourceURL == "" {
-		// This case should ideally not be hit if main.go initializes it with a default.
-		log.Println("CRITICAL: mrmsDataSourceURL is not set. This indicates an initialization issue.")
-		return "", fmt.Errorf("mrmsDataSourceURL is not configured")
+func FetchLatestQPE(ctx context.Context, accumulationPeriod string) (string, error) {
+	// Build the URL based on accumulation period
+	var dataSourceURL string
+	baseURL := "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_"
+	
+	switch accumulationPeriod {
+	case "24H", "24":
+		dataSourceURL = baseURL + "24H/"
+	case "48H", "48":
+		dataSourceURL = baseURL + "48H/"
+	case "72H", "72":
+		dataSourceURL = baseURL + "72H/"
+	default:
+		// Default to 24H if invalid period specified
+		dataSourceURL = baseURL + "24H/"
+		log.Printf("Invalid or missing accumulation period '%s', defaulting to 24H", accumulationPeriod)
 	}
 
-	log.Printf("Fetching GRIB index from: %s", mrmsDataSourceURL)
+	log.Printf("Fetching GRIB index from: %s", dataSourceURL)
 
 	// 1. Fetch the HTML index
-	req, err := http.NewRequestWithContext(ctx, "GET", mrmsDataSourceURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", dataSourceURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request for MRMS index: %w", err)
 	}
@@ -44,7 +54,7 @@ func FetchLatestQPE(ctx context.Context) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch MRMS index from %s: %w", mrmsDataSourceURL, err)
+		return "", fmt.Errorf("failed to fetch MRMS index from %s: %w", dataSourceURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -64,7 +74,7 @@ func FetchLatestQPE(ctx context.Context) (string, error) {
 	matches := re.FindAllStringSubmatch(bodyString, -1)
 
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no .grib2.gz files found in MRMS index at %s. HTML content might have changed or list is empty", mrmsDataSourceURL)
+		return "", fmt.Errorf("no .grib2.gz files found in MRMS index at %s. HTML content might have changed or list is empty", dataSourceURL)
 	}
 
 	// The last match is considered the newest
@@ -72,9 +82,9 @@ func FetchLatestQPE(ctx context.Context) (string, error) {
 	log.Printf("Latest GRIB file found in index: %s", latestFileRelativePath)
 
 	// Construct full download URL
-	baseParsedURL, err := url.Parse(mrmsDataSourceURL)
+	baseParsedURL, err := url.Parse(dataSourceURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse base MRMS URL %s: %w", mrmsDataSourceURL, err)
+		return "", fmt.Errorf("failed to parse base MRMS URL %s: %w", dataSourceURL, err)
 	}
 	// ResolveReference correctly handles joining, whether latestFileRelativePath is absolute or relative,
 	// and whether mrmsDataSourceURL ends with a slash.
@@ -130,12 +140,33 @@ func FetchLatestQPE(ctx context.Context) (string, error) {
 	return outputFilePath, nil
 }
 
+// PrecipRequest represents the JSON request body for precipitation data
+type PrecipRequest struct {
+	AccumulationPeriod string `json:"accumulation_period"`
+}
+
 // ---- Echo handler -------------------------------------------------
 func handelGetLatestPrecip(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Minute)
 	defer cancel()
 
-	meta, err := runGRIBtoCOG(ctx) // This already returns the PrecipMeta with CogPath
+	// Parse JSON body
+	var req PrecipRequest
+	if err := c.Bind(&req); err != nil {
+		// If binding fails or no JSON, default to 24H
+		log.Printf("Failed to bind request body or no JSON provided, defaulting to 24H: %v", err)
+		req.AccumulationPeriod = "24H"
+	}
+
+	// If accumulation period is empty, default to 24H
+	if req.AccumulationPeriod == "" {
+		req.AccumulationPeriod = "24H"
+	}
+
+	// Log the requested period
+	log.Printf("Processing precipitation request for accumulation period: %s", req.AccumulationPeriod)
+
+	meta, err := runGRIBtoCOG(ctx, req.AccumulationPeriod) // Pass the accumulation period
 	if err != nil {
 		// Use your existing respondWithError function
 		// Ensure the error message from runGRIBtoCOG is passed
@@ -167,10 +198,10 @@ func handelGetLatestPrecip(c echo.Context) error {
 }
 
 // ---- Spawns Python ------------------------------------------------
-func runGRIBtoCOG(ctx context.Context) (*PrecipMeta, error) {
+func runGRIBtoCOG(ctx context.Context, accumulationPeriod string) (*PrecipMeta, error) {
 	// --- Path Configuration ---
 	// inFile is now determined by FetchLatestQPE
-	latestGribFilePath, err := FetchLatestQPE(ctx)
+	latestGribFilePath, err := FetchLatestQPE(ctx, accumulationPeriod)
 	if err != nil {
 		// FetchLatestQPE already logs detailed errors.
 		return nil, fmt.Errorf("failed to fetch latest QPE GRIB file for COG conversion: %w", err)
