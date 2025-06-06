@@ -247,7 +247,8 @@ func main() {
 
 	e.GET("/api/get-all-junction-flows", handleGetAllJunctionFlows)
 
-	e.GET("/api/precip/latest", handelGetLatestPrecip)
+	e.POST("/api/precip/latest", handelGetLatestPrecip)
+	e.POST("/api/precip/historical", handelGetHistoricalPrecip)
 
 	//Historical API Calls
 	e.POST("/api/run-hms-pipeline-historical", handleRunHMSPipelineHistorical)
