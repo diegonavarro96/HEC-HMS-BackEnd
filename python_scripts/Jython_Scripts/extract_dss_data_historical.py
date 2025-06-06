@@ -11,7 +11,8 @@ from hec.heclib.util import HecTime
 # ---- user-configurable constants ------------------------------------------
 # ---------------------------------------------------------------------------
 TARGET_C_PART  = "FLOW"          # variable name
-TARGET_E_PART  = "1HOUR"         # time-step
+#TARGET_E_PART  = "15MIN"         # time-step
+TARGET_E_PART  = "1HOUR"
 RUN_ID_TOKEN   = "RUN:RAINHISTORICAL"  # what the F-part must contain
 TIMEZONE_LABEL = "UTC"           # whatever label your consumer expects
 UNITS_LABEL    = "cfs"           # adjust if your DSS units differ
@@ -67,7 +68,7 @@ def main():
         bpart_to_paths = {}
         for p in catalog:
             # pathname string is like  "/A/B/C/D/E/F/"
-           # print ("pathname: " , p)
+            #print ("pathname: " , p)
             parts = p.split("/")
             if len(parts) < 7:
                 continue  # malformed
@@ -95,10 +96,16 @@ def main():
 
         for bpart, path_list in sorted(bpart_to_paths.items()):
             path = path_list[0]                       # take first pathname
+            print("DEBUG: Attempting to read:", path)
             tsc  = dss.get(path, True)
-            if tsc is None or tsc.numberValues == 0:
-                print("WARNING - no data for", path)
+            if tsc is None:
+                print("ERROR - tsc is None for", path)
                 continue
+            elif tsc.numberValues == 0:
+                print("ERROR - tsc.numberValues is 0 for", path)
+                continue
+            else:
+                print("SUCCESS - Found", tsc.numberValues, "values for", path)
 
             # ---- collect time series -------------------------------------------------
             data_points = []
@@ -137,3 +144,7 @@ if __name__ == "__main__":
     main()
 
 #//CHI-001/FLOW/01May2025/1Hour/RUN:RainrealTime/
+#//CHI-001/FLOW/01May2025/15Minute/RUN:RainHistorical/
+#//CHI-001/FLOW/01Jun2025/15Minute/RUN:RainHistorical/
+
+

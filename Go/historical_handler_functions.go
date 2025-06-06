@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -420,29 +419,18 @@ func runExtractDSSDataJython(ctx context.Context) error {
 	log.Printf("INFO: Extracting DSS data for all junctions")
 
 	// Paths
-	jythonPath := GetJythonPath()
 	scriptPath := GetPythonScriptPath("Jython_Scripts/extract_dss_data_historical.py")
 	dssPath := filepath.Join(AppConfig.Paths.HMSHistoricalModelsDir, "LeonCreek", "RainHistorical.dss")
 	jsonOutputPath := GetJSONOutputPath("outputHistorical.json")
 
-	// Build command with DSS file and JSON output path arguments
-	cmd := exec.CommandContext(ctx, jythonPath, scriptPath, dssPath, jsonOutputPath)
-
-	// Run the command and capture output
-	output, err := cmd.CombinedOutput()
-
+	// Use executeJythonScript with the same approach as the working version
+	err := executeJythonScript(ctx, scriptPath, dssPath, jsonOutputPath)
 	if err != nil {
-		// Check if it's an exit error to get the exit code
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode := exitErr.ExitCode()
-			log.Printf("Jython script failed with exit code %d. Output: %s", exitCode, string(output))
-			return fmt.Errorf("jython script failed with exit code %d", exitCode)
-		}
-		log.Printf("Jython script failed: %v. Output: %s", err, string(output))
-		return fmt.Errorf("failed to run Jython script: %w", err)
+		log.Printf("Failed to extract DSS data: %v", err)
+		return fmt.Errorf("failed to extract DSS data: %w", err)
 	}
 
-	log.Printf("Successfully extracted DSS data. Output:\n%s", indentOutput(string(output)))
+	log.Printf("Successfully extracted DSS data for all junctions")
 	return nil
 }
 
