@@ -112,13 +112,27 @@ def main():
             # ---- compute peak flow ---------------------------------------------------
             max_flow = max(tsc.values) if tsc.numberValues > 0 else None
 
+            # ---- determine critical flow severity -----------------------------------
+            critical_flow = 100.0  # TODO: This should come from configuration/database
+            if max_flow is not None and critical_flow > 0:
+                flow_ratio = max_flow / critical_flow
+                if flow_ratio < 0.5:
+                    severity = "minor"
+                elif flow_ratio < 1.0:
+                    severity = "moderate" 
+                else:
+                    severity = "severe"
+            else:
+                severity = "minor"  # default when no data or critical flow not set
+
             # ---- append series entry --------------------------------------------------
             series_array.append({
-                "name":     bpart,
-                "timezone": TIMEZONE_LABEL,
-                "unit":     UNITS_LABEL,
-                "max":      float(max_flow) if max_flow is not None else None,
-                "data":     data_points
+                "name":         bpart,
+                "timezone":     TIMEZONE_LABEL,
+                "unit":         UNITS_LABEL,
+                "max":          float(max_flow) if max_flow is not None else None,
+                "criticalFlow": severity,
+                "data":         data_points
             })
 
         # -------------------------------------------------------------------
