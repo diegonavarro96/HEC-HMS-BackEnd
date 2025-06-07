@@ -30,7 +30,7 @@ func FetchLatestQPE(ctx context.Context, accumulationPeriod string) (string, err
 	// Build the URL based on accumulation period
 	var dataSourceURL string
 	baseURL := "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_"
-	
+
 	switch accumulationPeriod {
 	case "24H", "24":
 		dataSourceURL = baseURL + "24H/"
@@ -300,7 +300,7 @@ func FetchHistoricalQPE(ctx context.Context, dateStr string) (string, error) {
 	// Construct the archive URL
 	archiveURL := fmt.Sprintf("%s%s/%s/%s/mrms/ncep/MultiSensor_QPE_72H_Pass2/",
 		AppConfig.URLs.MRMSArchive, year, month, day)
-	
+
 	log.Printf("Fetching historical GRIB index from: %s", archiveURL)
 
 	// 1. Fetch the HTML index
@@ -308,7 +308,7 @@ func FetchHistoricalQPE(ctx context.Context, dateStr string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create request for historical MRMS index: %w", err)
 	}
-	
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -352,7 +352,7 @@ func FetchHistoricalQPE(ctx context.Context, dateStr string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create request for historical GRIB file download: %w", err)
 	}
-	
+
 	fileClient := &http.Client{Timeout: 10 * time.Minute}
 	fileResp, err := fileClient.Do(fileReq)
 	if err != nil {
